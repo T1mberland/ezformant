@@ -2,8 +2,8 @@ use ndarray::prelude::*;
 use rustfft::{num_complex::{Complex, ComplexFloat}, FftPlanner};
 
 fn levinson(
-    r: &[f64],     // Autocorrelation coefficients
-    a: &mut [f64], // LPC coefficients
+    r: &[f32],     // Autocorrelation coefficients
+    a: &mut [f32], // LPC coefficients
 ) -> Result<(), &'static str> {
     let m = r.len() - 1; // Order of LPC
     if r.is_empty() || a.len() != m + 1 {
@@ -43,38 +43,50 @@ fn levinson(
 }
 
 /// Computes autocorrelation using the frequency-domain method.
-fn autocorrelation_frequency_domain(signal: &[f64], max_lag: usize) -> Vec<f64> {
+fn autocorrelation_frequency_domain(signal: &[f32], max_lag: usize) -> Vec<f32> {
     let n = signal.len();
-    let mut planner = FftPlanner::<f64>::new();
-    let fft = planner.plan_fft_forward(n);
-
-    // Prepare input: real signal to complex
-    let mut buffer: Vec<Complex<f64>> = signal.iter().map(|&x| Complex::new(x, 0.0)).collect();
-    let mut buffer2: Vec<f64> = vec![0.0; n];
-
-    // Perform FFT
-    fft.process(&mut buffer);
-
-    // Compute power spectrum (magnitude squared)
-    for i in 0..n {
-         buffer2[i] = buffer[i].norm_sqr();
+    if max_lag >= n {
+        panic!("max_lag must be less than the length of the signal");
     }
 
-    // Inverse FFT
-    let ifft = FftPlanner::<f64>::new().plan_fft_inverse(n);
-    //let mut autocorr_complex = vec![Complex::new(0.0, 0.0); n];
+    // Set up FFT
+    let mut planner = FftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(n);
+    let ifft = planner.plan_fft_inverse(n);
+
+    // Convert real input to complex
+    let mut buffer: Vec<Complex<f32>> = signal
+        .iter()
+        .map(|&x| Complex::new(x, 0.0))
+        .collect();
+
+    // Forward FFT
+    fft.process(&mut buffer);
+
+    // Convert to power spectrum (|X[k]|^2)
+    //  i.e., buffer[k] = X[k] * conj(X[k]) = |X[k]|^2 (real)
+    for val in buffer.iter_mut() {
+        let mag_sq = val.norm_sqr();
+        *val = Complex::new(mag_sq, 0.0);
+    }
+
+    // Inverse FFT (of the power spectrum) gives us the autocorrelation
     ifft.process(&mut buffer);
 
-    // Extract real part and normalize
-    let autocorr: Vec<f64> = buffer.iter().map(|c| c.re / n as f64).collect();
+    // Normalize by N
+    let scale = 1.0 / n as f32;
+    let autocorr_time_domain: Vec<f32> = buffer
+        .iter()
+        .map(|c| c.re * scale)
+        .collect();
 
-    // Return autocorrelation up to max_lag
-    autocorr[..=max_lag].to_vec()
+    // Return up to max_lag
+    autocorr_time_domain[..=max_lag].to_vec()
 }
 
 pub fn lpctest() {
     // Test signal (a simple sine wave or random signal)
-    let signal = vec![1.0, 0.9, 0.7, 0.5, 0.3, 0.2, 0.1, 0.05, 0.0, -0.05, -0.1, -0.2];
+    let signal = vec![1.0, 0.9, 0.7, 0.5, 0.3, 0.2, 0.1, 0.05, 0.0, -0.05, -0.1, -0.2, 1.0, 0.0, -1.0, 0.03];
 
     // Calculate autocorrelation
     let max_lag = 4;
