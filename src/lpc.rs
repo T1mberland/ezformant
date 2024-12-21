@@ -84,6 +84,20 @@ fn autocorrelation_frequency_domain(signal: &[f32], max_lag: usize) -> Vec<f32> 
     autocorr_time_domain[..=max_lag].to_vec()
 }
 
+/// Compute the frequency response of the LPC filter
+fn compute_frequency_response(lpc_coeffs: &[f32], sample_rate: f32, num_points: usize) -> Vec<(f32, f32)> {
+    let mut response = Vec::new();
+    for i in 0..num_points {
+        let freq = i as f32 / num_points as f32 * sample_rate / 2.0; // Frequency in Hz
+        let omega = 2.0 * std::f32::consts::PI * freq / sample_rate;
+        let z = Complex::new(omega.cos(), -omega.sin()); // Complex exponential
+        let denominator: Complex<f32> = lpc_coeffs.iter().enumerate().map(|(k, &a_k)| z.powi(-(k as i32)) * a_k).sum();
+        let h = Complex::new(1.0, 0.0) / (Complex::new(1.0, 0.0) + denominator); // Transfer function
+        response.push((freq, h.norm()));
+    }
+    response
+}
+
 pub fn lpctest() {
     // Test signal (a simple sine wave or random signal)
     let signal = vec![1.0, 0.9, 0.7, 0.5, 0.3, 0.2, 0.1, 0.05, 0.0, -0.05, -0.1, -0.2, 1.0, 0.0, -1.0, 0.03];
