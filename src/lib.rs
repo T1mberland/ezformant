@@ -1,4 +1,10 @@
 use rustfft::{FftPlanner, num_complex::Complex};
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+pub fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
 
 fn basic_fft() {
     let mut planner = FftPlanner::new();
