@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en-US">
+
+<head>
+    <meta charset="utf-8">
+    <title>hello-wasm example</title>
+</head>
+
+<body>
+    This is Test
+    <script type="module">
+        import init, { add } from "./pkg/ezformant.js";
+        init()
+            .then(() => {
+                console.log(add(1, 3))
+            });
+    </script>
+</body>
+
+</html>
