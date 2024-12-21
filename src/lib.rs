@@ -1,4 +1,4 @@
-use rustfft::{FftPlanner, num_complex::Complex};
+use rustfft::{num_complex::{Complex, ComplexFloat}, FftPlanner};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -10,13 +10,42 @@ pub fn add(a: i32, b: i32) -> i32 {
 pub fn process_audio(data: Vec<f32>, lpc_order: usize) -> Vec<f32> {
     let len = data.len();
     let mut fft_input: Vec<Complex<f32>> = data.iter().map(|&x| Complex::new(x, 0.0)).collect();
-    let mut planner = FftPlanner::new();
+    let mut planner = FftPlanner::<f32>::new();
     let fft = planner.plan_fft_forward(len);
 
     fft.process(&mut fft_input);
 
-    fft_input.iter().map(|x| x.re).collect()
+    let half_len = len / 2;
+    fft_input.iter()
+        .take(half_len)
+        .map(|x| {
+            (x.abs() + 1e-10)
+        })
+        .collect()
+
 }
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+
+    #[test]
+    fn test1() {
+        let mut planner = FftPlanner::<f32>::new();
+        let len = 256;
+        let fft = planner.plan_fft_forward(256);
+
+        let mut buffer = vec![Complex{ re: 0.0, im: 0.0 }; 256];       
+
+        fft.process(&mut buffer);
+
+        for x in buffer {
+            println!("{}", x);
+        }
+    }
+}
+
+
 
 fn basic_fft() {
     let mut planner = FftPlanner::new();
