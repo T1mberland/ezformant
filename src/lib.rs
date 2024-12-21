@@ -45,6 +45,11 @@ mod tests{
             println!("{}", x);
         }
     }
+
+    #[test]
+    fn test2() {
+        lpc::lpctest();
+    }
 }
 
 
