@@ -1,25 +1,56 @@
 use ndarray::prelude::*;
 
-// p = lpc_size
-
-fn matrix_a_generator(signal: &[f32], n:usize, i: usize, j: usize) -> f32 {
-    if n+i<j+1 {
-        0.0f32
-    } else if n+i-(j+1) >= signal.len() {
-        0.0f32
-    } else {
-        signal[(n+i) - (j+1)]
+fn levinson(
+    r: &[f64],     // Autocorrelation coefficients
+    a: &mut [f64], // LPC coefficients
+) -> Result<(), &'static str> {
+    let m = r.len() - 1; // Order of LPC
+    if r.is_empty() || a.len() != m + 1 {
+        return Err("Invalid input sizes");
     }
+
+    let mut e = r[0]; // Prediction error (initially R[0])
+
+    if e == 0.0 {
+        return Err("Autocorrelation R[0] cannot be zero");
+    }
+
+    a[0] = 1.0; // First LPC coefficient (A[0] = 1.0)
+
+    for i in 1..=m {
+        // Compute the reflection coefficient (K)
+        let mut k = -r[i];
+        for j in 1..i {
+            k -= a[j] * r[i - j];
+        }
+        k /= e;
+
+        // Update LPC coefficients
+        for j in (1..i).rev() {
+            a[j] += k * a[i - j];
+        }
+        a[i] = k;
+
+        // Update prediction error
+        e *= 1.0 - k * k;
+        if e <= 0.0 {
+            return Err("Prediction error became non-positive, indicating instability");
+        }
+    }
+
+    Ok(())
 }
 
-fn calc_matrix_a(signal: &[f32], n:usize, p: usize) -> Array2<f32> {
-    let sample_size = signal.len();
-    Array::from_shape_fn((sample_size, p), |(i,j)| matrix_a_generator(signal, n, i, j))
-}
+pub fn lpctest() -> Result<(), &'static str> {
+    // Example autocorrelation coefficients
+    let r: [f64; 5] = [1.0, -0.5, 0.25, 0.125, 0.0625];
 
-fn calc_moore_penrose_inverse(signal: &[f32], n:usize, p: usize) {
-    let a = calc_matrix_a(signal, n, p);
-    let at = Array::t(&a);
-    let ata = at.dot(&a);
-}
+    // LPC coefficients
+    let mut a = [0.0; 5];
 
+    // Compute LPC coefficients
+    levinson(&r, &mut a)?;
+
+    println!("LPC Coefficients: {:?}", a);
+    Ok(())
+}
