@@ -16,6 +16,3 @@ fn basic_fft() {
     }
 }
 
-fn main() {
-    basic_fft();
-}
