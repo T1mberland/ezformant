@@ -1,6 +1,8 @@
 use rustfft::{num_complex::{Complex, ComplexFloat}, FftPlanner};
 use wasm_bindgen::prelude::*;
 
+mod lpc;
+
 #[wasm_bindgen]
 pub fn add(a: i32, b: i32) -> i32 {
     a + b
