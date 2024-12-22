@@ -90,9 +90,23 @@ mod tests{
     #[test]
     fn autocorrelate_test() {
         let x7 = vec![2.0,3.0,-1.0,-2.0,1.0,4.0,1.0];
+        let y7 = vec![36.0, 11.0, -16.0, -7.0, 13.0, 11.0, 2.0];
         let r = lpc::autocorrelate(&x7, 6);
         for i in 0..(r.len()) {
-            println!("{}", r[i]);
+            //println!("{}", r[i]);
+            assert_eq!(r[i], y7[i]);
+        }
+    }
+
+    #[test]
+    fn levinson_test() {
+        let x7 = vec![2.0,3.0,-1.0,-2.0,1.0,4.0,1.0];
+        let y4 = vec![1.0, -0.69190537, 0.76150628, -0.34575153];
+        let r = lpc::autocorrelate(&x7, 3);
+        let (l, _) = lpc::levinson(&x7, 3, &r);
+        for i in 0..(l.len()) { 
+            //println!("l[i]={}, when it should be {}", l[i], y4[i]);
+            assert!((l[i] - y4[i]).abs() < 1e-6);
         }
     }
 }
