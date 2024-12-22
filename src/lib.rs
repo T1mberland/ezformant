@@ -57,8 +57,6 @@ pub fn lpc_filter_freq_responce(
     for i in 0..data.len() {
         data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
     }
-    vec![]
-    /*
 
     /*
     let autocorr = lpc::autocorrelation_time_domain(&data, lpc_order);
@@ -68,19 +66,20 @@ pub fn lpc_filter_freq_responce(
         log(&format!("r[{}] = {}", i, val));
     }
     */
+
+    let r = lpc::autocorrelate(&data, lpc_order);
+
     // In `lpc_filter_freq_responce` before autocorrelation
     lpc::pre_emphasis(&mut data, 0.97);
 
-    match lpc::levinson(&data, lpc_order, None) {
-        (mut a,_e) => {
-            a.insert(0, 1.0);
+    match lpc::levinson(&data, lpc_order, &r) {
+        (a,_e) => {
             lpc::compute_frequency_response(&a, sample_rate, num_points)
                 .into_iter()
                 .map(|(_, mag)| mag)
                 .collect()
         }
     }
-    */
 }
 
 #[cfg(test)]
