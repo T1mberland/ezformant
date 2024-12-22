@@ -22,7 +22,7 @@ async function start() {
     const analyser = audioContext.createAnalyser();
     source.connect(analyser);
 
-    const fftSize = 1024;
+    const fftSize = 2048;
     analyser.fftSize = fftSize;
     const bufferLength = fftSize / 2;
     const dataArray = new Float32Array(fftSize);
@@ -39,7 +39,8 @@ async function start() {
 
     // Function to get frequency for a given bin index
     function getFrequency(index) {
-      return index * sampleRate / analyser.fftSize;
+      // Modified this line ONLY to align data with labels:
+      return index * (maxFrequency / bufferLength);
     }
 
     function frequencyToPosition(freq) {
@@ -91,7 +92,7 @@ async function start() {
     }
 
     function drawFrequencyLabels() {
-      const labelCount = 10; // Number of labels to display
+      const labelCount = 20; // Number of labels to display
       ctx.fillStyle = '#ffffff'; // Label color
       ctx.font = '12px Arial';
       ctx.textAlign = 'center';
