@@ -101,12 +101,14 @@ async function start() {
     function drawLPCFilter() {
       analyser.getFloatTimeDomainData(dataArray);
 
-      const freqResponce = lpc_filter_freq_responce(Array.from(dataArray), 4, sampleRate, numBars);
+      const freqResponce = lpc_filter_freq_responce(Array.from(dataArray), 8, sampleRate, numBars);
+      const normalizeConst = 0.1;
 
       if (freqResponce.every(value => value === 0)) {
           requestAnimationFrame(drawLPCFilter);
           return;
       }
+      ctx.strokeStyle = "red";
 
       ctx.beginPath();
       ctx.moveTo(0,0);
@@ -116,7 +118,7 @@ async function start() {
         const binStart = Math.floor(freqStart * analyser.fftSize / sampleRate);
 
         const xPos = canvas.width * freqStart / maxFrequency;
-        const yPos = freqResponce[i];
+        const yPos = freqResponce[i] / normalizeConst;
 
         ctx.lineTo(xPos, yPos);
         ctx.moveTo(xPos, yPos);

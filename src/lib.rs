@@ -16,7 +16,7 @@ pub fn process_audio(data: Vec<f32>, lpc_order: usize) -> Vec<f32> {
     fft_input.iter()
         .take(half_len)
         .map(|x| {
-            (x.abs() + 1e-10)
+            x.abs() + 1e-10
         })
         .collect()
 
@@ -58,26 +58,21 @@ pub fn lpc_filter_freq_responce(
         data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
     }
 
+    /*
     let autocorr = lpc::autocorrelation_time_domain(&data, lpc_order);
-    let mut lpc_coeffs = vec![0.0; lpc_order + 1];
-
     // Log the entire autocorrelation sequence for debugging
     log("Autocorrelation Sequence:");
     for (i, val) in autocorr.iter().enumerate() {
         log(&format!("r[{}] = {}", i, val));
     }
+    */
 
-    match lpc::levinson(&autocorr, &mut lpc_coeffs) {
-        Ok(()) => {
-            lpc::compute_frequency_response(&lpc_coeffs, sample_rate, num_points)
+    match lpc::levinson(&data, lpc_order, None) {
+        (a,_e) =>
+            lpc::compute_frequency_response(&a, sample_rate, num_points)
                 .into_iter()
                 .map(|(_, mag)| mag)
                 .collect()
-        }
-        Err(e) => {
-            log(&e);
-            vec![0.0; lpc_order + 1]
-        }
     }
 }
 
@@ -98,11 +93,6 @@ mod tests{
         for x in buffer {
             println!("{}", x);
         }
-    }
-
-    #[test]
-    fn test2() {
-        lpc::lpctest();
     }
 }
 
