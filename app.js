@@ -6,7 +6,13 @@ const ctx = canvas.getContext('2d');
 async function start() {
     await init();
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      audio: {
+        autoGainControl: false,
+        noiseSuppression: false,
+        echoCancellation: false
+      }
+    });
     const audioContext = new AudioContext();
     const source = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
