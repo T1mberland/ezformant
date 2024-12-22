@@ -22,13 +22,29 @@ pub fn pre_emphasis(signal: &mut [f64], alpha: f64) {
 /// # Arguments
 /// 
 /// * `signal` - A slice of f64 representing the input signal.
-/// * `lag` - The maximum lag for which to compute autocorrelation.
+/// * `maxlag` - The maximum lag for which to compute autocorrelation.
 /// 
 /// # Returns
 /// 
 /// A vector containing autocorrelation values from lag 0 to `lag`.
-fn autocorrelate(signal: &[f64], lag: usize) -> Vec<f64> {
+pub fn autocorrelate(signal: &[f64], maxlag: usize) -> Vec<f64> {
+    let mut result: Vec<f64> = vec![];
+    let n = signal.len();
 
+    for lag in 0..=maxlag {
+        let mut r = 0.0;
+        for i in 0..n {
+            if i + lag < n {
+                r += signal[i] * signal[i+lag];
+            } else {
+                break;
+            }
+        }
+
+        result.push(r);
+    }
+
+    result
 }
 
 /// Computes the dot product of two slices.
@@ -74,7 +90,7 @@ fn reverse_slice(a: &[f64]) -> Vec<f64> {
 /// - A vector of filter coefficients (`a`).
 /// - The final prediction error (`E`).
 pub fn levinson(signal: &[f64], order: usize, r: Option<&[f64]>) -> (Vec<f64>, f64){
-
+    (vec![], 0.0)
 }
 
 /// Compute the frequency response of the LPC filter

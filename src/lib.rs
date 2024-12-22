@@ -87,18 +87,12 @@ pub fn lpc_filter_freq_responce(
 mod tests{
     use super::*;
 
-    //#[test]
-    fn test1() {
-        let mut planner = FftPlanner::<f32>::new();
-        let len = 256;
-        let fft = planner.plan_fft_forward(256);
-
-        let mut buffer = vec![Complex{ re: 0.0, im: 0.0 }; 256];       
-
-        fft.process(&mut buffer);
-
-        for x in buffer {
-            println!("{}", x);
+    #[test]
+    fn autocorrelate_test() {
+        let x7 = vec![2.0,3.0,-1.0,-2.0,1.0,4.0,1.0];
+        let r = lpc::autocorrelate(&x7, 6);
+        for i in 0..(r.len()) {
+            println!("{}", r[i]);
         }
     }
 }
