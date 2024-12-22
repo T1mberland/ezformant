@@ -41,7 +41,7 @@ extern "C" {
 }
 
 #[wasm_bindgen]
-pub fn lpc_filter_freq_responce(
+pub fn lpc_filter_freq_response(
     mut data: Vec<f64>, 
     lpc_order: usize, 
     sample_rate: f64, 
