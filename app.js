@@ -24,9 +24,6 @@ async function start() {
     const filterDataArray = new Float32Array(bufferLength);
     const sampleRate = audioContext.sampleRate;
 
-    // Number of bars in the spectrum
-    const numBars = 1024; // Adjust as needed
-
     // Precompute logarithmic frequency boundaries
     const minFrequency = 20; // Minimum frequency to display
     const maxFrequency = sampleRate / 2; // Nyquist frequency
@@ -44,57 +41,70 @@ async function start() {
         return (Math.log10(freq) - logMin) / logRange * canvas.width;
     }
 
-    // Precompute frequency boundaries for each bar
-    const frequencyBins = [];
-    for (let i = 0; i < numBars; i++) {
-        const logFreq = logMin + (i / numBars) * logRange;
-        frequencyBins.push(Math.pow(10, logFreq));
-    }
-
     function drawSpectrum() {
         analyser.getFloatTimeDomainData(dataArray);
 
-        const spectrum = process_audio(Array.from(dataArray), 0); // Convert Float32Array to Array
+        const spectrum = process_audio(Array.from(dataArray), 0); // calculates FFT here.
 
         // Clear the canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        const barWidth = canvas.width / numBars;
+        // Begin drawing the spectrum
+        ctx.fillStyle = '#000'; // Background color
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Optional: Use a logarithmic scale for the y-axis as well
-        // const magnitudeScale = Math.log10(1 + Math.max(...spectrum));
+        ctx.strokeStyle = '#00ff00'; // Spectrum line color
+        ctx.lineWidth = 2;
+        ctx.beginPath();
 
-        for (let i = 0; i < numBars; i++) {
-            // Determine the frequency range for this bar
-            const freqStart = frequencyBins[i];
-            const freqEnd = frequencyBins[i + 1] || maxFrequency;
+        // Determine the maximum magnitude for normalization
+        const maxMagnitude = Math.max(...spectrum.map(Math.abs));
 
-            // Find corresponding FFT bins
-            const binStart = Math.floor(freqStart * analyser.fftSize / sampleRate);
-            const binEnd = Math.floor(freqEnd * analyser.fftSize / sampleRate);
+        // Iterate through the spectrum data
+        for (let i = 0; i < spectrum.length; i++) {
+            const freq = getFrequency(i);
+            if (freq < minFrequency || freq > maxFrequency) continue;
 
-            // Aggregate the magnitude within these bins
-            let magnitude = 0;
-            for (let bin = binStart; bin <= binEnd; bin++) {
-                if (bin < spectrum.length) {
-                    magnitude += spectrum[bin];
-                }
+            const x = frequencyToPosition(freq);
+            const magnitude = spectrum[i];
+            // Normalize magnitude to fit the canvas height
+            const y = canvas.height - (Math.abs(magnitude) / maxMagnitude) * canvas.height;
+
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
             }
-            // Average the magnitude
-            magnitude = magnitude / (binEnd - binStart + 1);
-
-            // Normalize the magnitude (optional: apply logarithmic scaling)
-            const normalizedMagnitude = magnitude / 100; // Adjust based on expected magnitude range
-
-            const barHeight = normalizedMagnitude * canvas.height;
-
-            ctx.fillStyle = 'rgb(0, 0, 255)';
-            ctx.fillRect(i * barWidth, canvas.height - barHeight, barWidth, barHeight);
         }
+
+        ctx.stroke();
+
+        // Optionally, draw frequency labels
+        drawFrequencyLabels();
 
         requestAnimationFrame(drawSpectrum);
     }
 
+    function drawFrequencyLabels() {
+const labelCount = 10; // Number of labels to display
+ctx.fillStyle = '#ffffff'; // Label color
+ctx.font = '12px Arial';
+ctx.textAlign = 'center';
+ctx.textBaseline = 'top';
+
+for (let i = 0; i <= labelCount; i++) {
+    const freq = minFrequency * Math.pow(10, (logRange * i) / labelCount);
+    const x = frequencyToPosition(freq);
+    ctx.beginPath();
+    ctx.moveTo(x, canvas.height);
+    ctx.lineTo(x, canvas.height - 10);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillText(Math.round(freq) + ' Hz', x, canvas.height - 25);
+}
+}
     function drawLPCFilter() {
       analyser.getFloatTimeDomainData(dataArray);
 
