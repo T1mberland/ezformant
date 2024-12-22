@@ -25,7 +25,7 @@ async function start() {
     const sampleRate = audioContext.sampleRate;
 
     // Number of bars in the spectrum
-    const numBars = 512; // Adjust as needed
+    const numBars = 1024; // Adjust as needed
 
     // Precompute logarithmic frequency boundaries
     const minFrequency = 20; // Minimum frequency to display
@@ -40,6 +40,10 @@ async function start() {
         return index * sampleRate / analyser.fftSize;
     }
 
+    function frequencyToPosition(freq) {
+        return (Math.log10(freq) - logMin) / logRange * canvas.width;
+    }
+
     // Precompute frequency boundaries for each bar
     const frequencyBins = [];
     for (let i = 0; i < numBars; i++) {
@@ -49,13 +53,6 @@ async function start() {
 
     function drawSpectrum() {
         analyser.getFloatTimeDomainData(dataArray);
-
-        /*
-        for (let i = 0; i < dataArray.length; i++) {
-          let window = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (dataArray.length - 1)));
-          dataArray[i] *= window;
-        }
-        */
 
         const spectrum = process_audio(Array.from(dataArray), 0); // Convert Float32Array to Array
 
@@ -101,8 +98,10 @@ async function start() {
     function drawLPCFilter() {
       analyser.getFloatTimeDomainData(dataArray);
 
-      const freqResponce = lpc_filter_freq_responce(Array.from(dataArray), 8, sampleRate, numBars);
-      const normalizeConst = 0.1;
+      const graphSize = 1024;
+
+      const freqResponce = lpc_filter_freq_responce(Array.from(dataArray), 16, sampleRate, graphSize);
+      const normalizeConst = 1;
 
       if (freqResponce.every(value => value === 0)) {
           requestAnimationFrame(drawLPCFilter);
@@ -111,13 +110,19 @@ async function start() {
       ctx.strokeStyle = "red";
 
       ctx.beginPath();
-      ctx.moveTo(0,0);
-      for (let i = 0; i < numBars; ++i) {
-        const xPos = canvas.width * i / numBars;
+      ctx.moveTo(0,canvas.height);
+      for (let i = 0; i < graphSize; ++i) {
+        const freq = i * maxFrequency / graphSize;
+
+        if (freq < minFrequency) { continue; } 
+
+        const xPos = frequencyToPosition(freq);
         const yPos = canvas.height - freqResponce[i] / normalizeConst;
 
         ctx.lineTo(xPos, yPos);
         ctx.moveTo(xPos, yPos);
+        
+      ctx.strokeStyle = "red";
       }
       ctx.stroke();
       //console.log(freqResponce);

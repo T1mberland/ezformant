@@ -58,15 +58,6 @@ pub fn lpc_filter_freq_responce(
         data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
     }
 
-    /*
-    let autocorr = lpc::autocorrelation_time_domain(&data, lpc_order);
-    // Log the entire autocorrelation sequence for debugging
-    log("Autocorrelation Sequence:");
-    for (i, val) in autocorr.iter().enumerate() {
-        log(&format!("r[{}] = {}", i, val));
-    }
-    */
-
     let r = lpc::autocorrelate(&data, lpc_order);
 
     // In `lpc_filter_freq_responce` before autocorrelation
