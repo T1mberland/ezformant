@@ -74,7 +74,10 @@ async function start() {
 
         const x = frequencyToPosition(freq);
         const magnitude = spectrum[i];
-        const y = canvas.height - (Math.abs(magnitude) / maxMagnitude) * canvas.height;
+
+        const logMagnitude = Math.log10(Math.abs(magnitude) + 1); // Add 1 to avoid log10(0)
+        const logMaxMagnitude = Math.log10(maxMagnitude + 1);
+        const y = canvas.height - (logMagnitude / logMaxMagnitude) * canvas.height;
 
         if (i === 0) {
           ctx.moveTo(x, y);
@@ -136,7 +139,10 @@ async function start() {
         if (freq < minFrequency) continue;
 
         const xPos = frequencyToPosition(freq);
-        const yPos = canvas.height - (freqResponce[i] / normalizeConst) * canvas.height;
+
+        const logResponse = Math.log10(freqResponce[i] + 1); // Add 1 to avoid log10(0)
+        const logMaxResponse = Math.log10(normalizeConst + 1);
+        const yPos = canvas.height - (logResponse / logMaxResponse) * canvas.height;
 
         if (!started) {
           ctx.moveTo(xPos, yPos);
