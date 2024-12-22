@@ -4,11 +4,6 @@ use wasm_bindgen::prelude::*;
 mod lpc;
 
 #[wasm_bindgen]
-pub fn add(a: i32, b: i32) -> i32 {
-    a + b
-}
-
-#[wasm_bindgen]
 pub fn process_audio(data: Vec<f32>, lpc_order: usize) -> Vec<f32> {
     let len = data.len();
     let mut fft_input: Vec<Complex<f32>> = data.iter().map(|&x| Complex::new(x, 0.0)).collect();
@@ -46,24 +41,37 @@ extern "C" {
 }
 
 #[wasm_bindgen]
-pub fn lpc_filter_freq_responce(data: Vec<f64>, lpc_order: usize, sample_rate: f64, num_points: usize) -> Vec<f64> {
-    //let autocorr = lpc::autocorrelation_frequency_domain(&data, lpc_order);
+pub fn lpc_filter_freq_responce(
+    mut data: Vec<f64>, 
+    lpc_order: usize, 
+    sample_rate: f64, 
+    num_points: usize
+) -> Vec<f64> {
+    // Subtract the mean to make the signal zero-mean
+    let mean = data.iter().copied().sum::<f64>() / data.len() as f64;
+    for sample in data.iter_mut() {
+        *sample -= mean;
+    }
+
+    // Optionally, apply windowing (e.g., Hamming window)
+    for i in 0..data.len() {
+        data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
+    }
+
     let autocorr = lpc::autocorrelation_time_domain(&data, lpc_order);
     let mut lpc_coeffs = vec![0.0; lpc_order + 1];
 
-    log("aut corr");
-    log(&autocorr[0].to_string());
-    log(&autocorr[1].to_string());
-    log(&autocorr[2].to_string());
-    log(&autocorr[3].to_string());
-    log(&autocorr[4].to_string());
-    log(&autocorr.len().to_string());
+    // Log the entire autocorrelation sequence for debugging
+    log("Autocorrelation Sequence:");
+    for (i, val) in autocorr.iter().enumerate() {
+        log(&format!("r[{}] = {}", i, val));
+    }
 
     match lpc::levinson(&autocorr, &mut lpc_coeffs) {
         Ok(()) => {
             lpc::compute_frequency_response(&lpc_coeffs, sample_rate, num_points)
                 .into_iter()
-                .map(|(x,_)| x)
+                .map(|(_, mag)| mag)
                 .collect()
         }
         Err(e) => {
