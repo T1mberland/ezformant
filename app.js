@@ -18,7 +18,7 @@ async function start() {
     const analyser = audioContext.createAnalyser();
     source.connect(analyser);
 
-    analyser.fftSize = 2048;
+    analyser.fftSize = 1024;
     const bufferLength = analyser.fftSize;
     const dataArray = new Float32Array(bufferLength);
     const filterDataArray = new Float32Array(bufferLength);
@@ -113,12 +113,8 @@ async function start() {
       ctx.beginPath();
       ctx.moveTo(0,0);
       for (let i = 0; i < numBars; ++i) {
-        const freqStart = frequencyBins[i];
-
-        const binStart = Math.floor(freqStart * analyser.fftSize / sampleRate);
-
-        const xPos = canvas.width * freqStart / maxFrequency;
-        const yPos = freqResponce[i] / normalizeConst;
+        const xPos = canvas.width * i / numBars;
+        const yPos = canvas.height - freqResponce[i] / normalizeConst;
 
         ctx.lineTo(xPos, yPos);
         ctx.moveTo(xPos, yPos);
