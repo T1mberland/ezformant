@@ -98,14 +98,23 @@ pub fn autocorrelation_time_domain(signal: &[f64], max_lag: usize) -> Vec<f64> {
 }
 
 /// Compute the frequency response of the LPC filter
-pub fn compute_frequency_response(lpc_coeffs: &[f64], sample_rate: f64, num_points: usize) -> Vec<(f64, f64)> {
-    let mut response = Vec::new();
+pub fn compute_frequency_response(
+    lpc_coeffs: &[f64], 
+    sample_rate: f64, 
+    num_points: usize
+) -> Vec<(f64, f64)> {
+    let mut response = Vec::with_capacity(num_points);
     for i in 0..num_points {
         let freq = i as f64 / num_points as f64 * sample_rate / 2.0; // Frequency in Hz
         let omega = 2.0 * std::f64::consts::PI * freq / sample_rate;
         let z = Complex::new(omega.cos(), -omega.sin()); // Complex exponential
-        let denominator: Complex<f64> = lpc_coeffs.iter().enumerate().map(|(k, &a_k)| z.powi(-(k as i32)) * a_k).sum();
-        let h = Complex::new(1.0, 0.0) / (Complex::new(1.0, 0.0) + denominator); // Transfer function
+        let denominator: Complex<f64> = lpc_coeffs
+            .iter()
+            .enumerate()
+            .map(|(k, &a_k)| z.powi(-(k as i32)) * a_k)
+            .sum();
+        // Correct computation: H(z) = 1 / A(z)
+        let h = Complex::new(1.0, 0.0) / denominator; 
         response.push((freq, h.norm()));
     }
     response

@@ -50,6 +50,13 @@ async function start() {
     function drawSpectrum() {
         analyser.getFloatTimeDomainData(dataArray);
 
+        /*
+        for (let i = 0; i < dataArray.length; i++) {
+          let window = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (dataArray.length - 1)));
+          dataArray[i] *= window;
+        }
+        */
+
         const spectrum = process_audio(Array.from(dataArray), 0); // Convert Float32Array to Array
 
         // Clear the canvas
@@ -94,12 +101,7 @@ async function start() {
     function drawLPCFilter() {
       analyser.getFloatTimeDomainData(dataArray);
 
-      for (let i = 0; i < dataArray.length; i++) {
-        let window = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (dataArray.length - 1)));
-        dataArray[i] *= window;
-      }
-
-      const freqResponce = lpc_filter_freq_responce(Array.from(dataArray), 8, sampleRate, numBars);
+      const freqResponce = lpc_filter_freq_responce(Array.from(dataArray), 4, sampleRate, numBars);
 
       if (freqResponce.every(value => value === 0)) {
           requestAnimationFrame(drawLPCFilter);
@@ -114,7 +116,7 @@ async function start() {
         const binStart = Math.floor(freqStart * analyser.fftSize / sampleRate);
 
         const xPos = canvas.width * freqStart / maxFrequency;
-        const yPos = freqResponce[freqStart];
+        const yPos = freqResponce[i];
 
         ctx.lineTo(xPos, yPos);
         ctx.moveTo(xPos, yPos);
