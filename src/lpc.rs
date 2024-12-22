@@ -47,35 +47,6 @@ pub fn autocorrelate(signal: &[f64], maxlag: usize) -> Vec<f64> {
     result
 }
 
-/// Computes the dot product of two slices.
-/// 
-/// # Arguments
-/// 
-/// * `a` - A slice of f64.
-/// * `b` - A slice of f64.
-/// 
-/// # Returns
-/// 
-/// The dot product as an f64.
-fn dot_product(a: &[f64], b: &[f64]) -> f64 {
-    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
-}
-
-/// Reverses a slice and returns a new vector.
-/// 
-/// # Arguments
-/// 
-/// * `a` - A slice of f64.
-/// 
-/// # Returns
-/// 
-/// A new vector containing the elements of `a` in reverse order.
-fn reverse_slice(a: &[f64]) -> Vec<f64> {
-    let mut reversed = a.to_vec();
-    reversed.reverse();
-    reversed
-}
-
 /// Implements the Levinson-Durbin recursion algorithm.
 /// 
 /// # Arguments
@@ -89,8 +60,37 @@ fn reverse_slice(a: &[f64]) -> Vec<f64> {
 /// A tuple containing:
 /// - A vector of filter coefficients (`a`).
 /// - The final prediction error (`E`).
-pub fn levinson(signal: &[f64], order: usize, r: Option<&[f64]>) -> (Vec<f64>, f64){
-    (vec![], 0.0)
+pub fn levinson(signal: &[f64], order: usize, r: &[f64]) -> (Vec<f64>, f64){
+    let p = order;
+
+    if p == 0 {
+        return (vec![1.0], r[0]);
+    } else if p == 1 {
+        let a1 = -r[1]/r[0];
+        return (vec![1.0, a1], r[0] + r[1]*a1);
+    }
+
+
+    let (aa, ee) = levinson(signal, p-1, r);
+
+    let mut k = 0.0;
+    for j in 0..p {
+        //println!("levinson: j={}", j);
+        k += aa[j]*r[p-j];
+    }
+    k = - k / ee;
+
+    let e = ee*(1.0 - k*k);
+
+    let mut u = aa.clone();
+    u.push(0.0);
+
+    let mut v = u.clone();
+    v.reverse();
+
+    let result = u.iter().enumerate().map(|(ix, &uu)| uu + k*v[ix]).collect();
+
+    (result, e)
 }
 
 /// Compute the frequency response of the LPC filter
