@@ -27,6 +27,52 @@ pub fn process_audio(data: Vec<f32>, lpc_order: usize) -> Vec<f32> {
 
 }
 
+#[wasm_bindgen]
+extern "C" {
+    // Use `js_namespace` here to bind `console.log(..)` instead of just
+    // `log(..)`
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+
+    // The `console.log` is quite polymorphic, so we can bind it with multiple
+    // signatures. Note that we need to use `js_name` to ensure we always call
+    // `log` in JS.
+    #[wasm_bindgen(js_namespace = console, js_name = log)]
+    fn log_u32(a: u32);
+
+    // Multiple arguments too!
+    #[wasm_bindgen(js_namespace = console, js_name = log)]
+    fn log_many(a: &str, b: &str);
+}
+
+#[wasm_bindgen]
+pub fn lpc_filter_freq_responce(data: Vec<f64>, lpc_order: usize, sample_rate: f64, num_points: usize) -> Vec<f64> {
+    //let autocorr = lpc::autocorrelation_frequency_domain(&data, lpc_order);
+    let autocorr = lpc::autocorrelation_time_domain(&data, lpc_order);
+    let mut lpc_coeffs = vec![0.0; lpc_order + 1];
+
+    log("aut corr");
+    log(&autocorr[0].to_string());
+    log(&autocorr[1].to_string());
+    log(&autocorr[2].to_string());
+    log(&autocorr[3].to_string());
+    log(&autocorr[4].to_string());
+    log(&autocorr.len().to_string());
+
+    match lpc::levinson(&autocorr, &mut lpc_coeffs) {
+        Ok(()) => {
+            lpc::compute_frequency_response(&lpc_coeffs, sample_rate, num_points)
+                .into_iter()
+                .map(|(x,_)| x)
+                .collect()
+        }
+        Err(e) => {
+            log(&e);
+            vec![0.0; lpc_order + 1]
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
