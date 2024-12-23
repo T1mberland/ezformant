@@ -120,6 +120,35 @@ pub fn lpc_filter_freq_response_with_peaks(
     result
 }
 
+// returns [F1,f2,f3,f4]
+#[wasm_bindgen]
+pub fn formant_detection(
+    mut data: Vec<f64>, 
+    lpc_order: usize, 
+    sample_rate: f64,
+) -> Vec<f64> {
+    const FORMANT_NUM: usize = 4;
+
+    // Subtract the mean to make the signal zero-mean
+    let mean = data.iter().copied().sum::<f64>() / data.len() as f64;
+    for sample in data.iter_mut() {
+        *sample -= mean;
+    }
+
+    // Apply windowing (e.g., Hamming window)
+    for i in 0..data.len() {
+        data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
+    }
+
+    lpc::pre_emphasis(&mut data, 0.97);
+
+    let r = lpc::autocorrelate(&data, lpc_order);
+    let (lpc_coeff, _) = lpc::levinson(&data, lpc_order, &r);
+    let formants = lpc::formant_detection(&lpc_coeff, sample_rate);
+
+    formants
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
