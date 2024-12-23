@@ -1,9 +1,7 @@
-import init, { process_audio, lpc_filter_freq_response } from './pkg/ezformant.js';
+import init, { process_audio, lpc_filter_freq_response, lpc_filter_freq_response_with_peaks } from './pkg/ezformant.js';
 
 const canvas = document.getElementById('spectrum');
 const ctx = canvas.getContext('2d');
-
-//document.getElementById('start-button').addEventListener('click', start); // User interaction
 
 async function start() {
   try {
@@ -117,6 +115,8 @@ async function start() {
 
     function drawLPCFilter() {
       analyser.getFloatTimeDomainData(dataArray);
+
+      //console.log(lpc_filter_freq_response_with_peaks(Array.from(dataArray), sampleRate));
 
       const graphSize = 1024;
       const freqResponce = lpc_filter_freq_response(Array.from(dataArray), 16, sampleRate, graphSize);

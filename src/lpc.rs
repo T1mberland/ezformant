@@ -1,6 +1,10 @@
+use std::f32::EPSILON;
+
 use ndarray::prelude::*;
 use rustfft::{num_complex::{Complex, ComplexFloat}, FftPlanner};
 use wasm_bindgen::prelude::*;
+use aberth::aberth;
+use aberth::AberthSolver;
 
 #[wasm_bindgen]
 extern "C" {
@@ -115,3 +119,33 @@ pub fn compute_frequency_response(
     response
 }
 
+pub fn peak_detection(lpc_coeffs: &[f64], sample_rate: f64) -> Vec<f64> {
+    const EPSILON: f64 = 0.001;
+    const MAX_ITERATIONS: u32 = 15;
+    let mut solver = AberthSolver::new();
+    solver.epsilon = EPSILON;
+    solver.max_iterations = MAX_ITERATIONS;
+
+    let roots = solver.find_roots(lpc_coeffs).to_vec();
+    let mut peaks = Vec::with_capacity(roots.len());
+
+    for root in roots {
+        let theta = root.arg();
+        peaks.push(theta * sample_rate / 2.0 / std::f64::consts::PI);
+    }
+
+    peaks
+}
+
+pub fn formant_detection(lpc_coeffs: &[f64], sample_rate: f64) -> Vec<f64> {
+    let peaks = peak_detection(lpc_coeffs, sample_rate);
+    let mut formants = Vec::with_capacity(peaks.len());
+
+    for peak in peaks {
+        if peak < 10.0 || peak > (sample_rate/2.0 - 10.0) { continue; }
+
+        formants.push(peak);
+    }
+
+    formants
+}
