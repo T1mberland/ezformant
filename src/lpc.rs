@@ -121,7 +121,7 @@ pub fn compute_frequency_response(
 
 pub fn peak_detection(lpc_coeffs: &[f64], sample_rate: f64) -> Vec<f64> {
     const EPSILON: f64 = 0.001;
-    const MAX_ITERATIONS: u32 = 15;
+    const MAX_ITERATIONS: u32 = 10;
     let mut solver = AberthSolver::new();
     solver.epsilon = EPSILON;
     solver.max_iterations = MAX_ITERATIONS;
