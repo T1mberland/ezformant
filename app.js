@@ -158,6 +158,8 @@ async function start() {
       requestAnimationFrame(drawLPCFilter);
     }
 
+    function calcFormants() {}
+
     drawSpectrum();
     drawLPCFilter();
   } catch (error) {
