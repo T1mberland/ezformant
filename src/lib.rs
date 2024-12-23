@@ -73,35 +73,50 @@ pub fn lpc_filter_freq_response(
     }
 }
 
+
+// Returns [F1, F2, F3, F4, LPC_frequency_response]
 #[wasm_bindgen]
 pub fn lpc_filter_freq_response_with_peaks(
     mut data: Vec<f64>, 
     lpc_order: usize, 
-    sample_rate: f64
+    sample_rate: f64,
+    num_points: usize
 ) -> Vec<f64> {
+    const FORMANT_NUM: usize = 4;
+
     // Subtract the mean to make the signal zero-mean
     let mean = data.iter().copied().sum::<f64>() / data.len() as f64;
     for sample in data.iter_mut() {
         *sample -= mean;
     }
 
-    // Optionally, apply windowing (e.g., Hamming window)
+    // Apply windowing (e.g., Hamming window)
     for i in 0..data.len() {
         data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
     }
 
-    // In `lpc_filter_freq_responce` before autocorrelation
     lpc::pre_emphasis(&mut data, 0.97);
 
     let r = lpc::autocorrelate(&data, lpc_order);
+    let (lpc_coeff, _) = lpc::levinson(&data, lpc_order, &r);
+    let formants = lpc::formant_detection(&lpc_coeff, sample_rate);
+    let lpc_freq_response: Vec<f64> =
+            lpc::compute_frequency_response(&lpc_coeff, sample_rate, num_points)
+                .into_iter()
+                .map(|(_, mag)| mag)
+                .collect();
 
-    match lpc::levinson(&data, lpc_order, &r) {
-        (a,_e) => {
-            let peaks = lpc::peak_detection(&a, sample_rate);
-
-            return peaks;
+    let mut result = Vec::with_capacity(FORMANT_NUM + lpc_freq_response.len());
+    for i in 0..FORMANT_NUM {
+        if i < formants.len() {
+            result.push(formants[i]);
+        } else {
+            result.push(0.0);
         }
     }
+    result.extend(&lpc_freq_response);
+
+    result
 }
 
 #[cfg(test)]
