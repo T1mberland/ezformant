@@ -3,6 +3,23 @@
 version = 4
 
 [[package]]
+name = "aberth"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cb783fafbd88179a8f541eddc7d23edb991791ff3ed4f86098dd64a418626fb"
+dependencies = [
+ "arrayvec",
+ "num-complex",
+ "num-traits",
+]
+
+[[package]]
+name = "arrayvec"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
+
+[[package]]
 name = "autocfg"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -24,6 +41,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "ezformant"
 version = "0.1.0"
 dependencies = [
+ "aberth",
  "ndarray",
  "rustfft",
  "wasm-bindgen",

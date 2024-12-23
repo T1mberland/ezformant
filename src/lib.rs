@@ -73,6 +73,37 @@ pub fn lpc_filter_freq_response(
     }
 }
 
+#[wasm_bindgen]
+pub fn lpc_filter_freq_response_with_peaks(
+    mut data: Vec<f64>, 
+    lpc_order: usize, 
+    sample_rate: f64
+) -> Vec<f64> {
+    // Subtract the mean to make the signal zero-mean
+    let mean = data.iter().copied().sum::<f64>() / data.len() as f64;
+    for sample in data.iter_mut() {
+        *sample -= mean;
+    }
+
+    // Optionally, apply windowing (e.g., Hamming window)
+    for i in 0..data.len() {
+        data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
+    }
+
+    let r = lpc::autocorrelate(&data, lpc_order);
+
+    // In `lpc_filter_freq_responce` before autocorrelation
+    lpc::pre_emphasis(&mut data, 0.97);
+
+    match lpc::levinson(&data, lpc_order, &r) {
+        (a,_e) => {
+            let peaks = lpc::peak_detection(&a, sample_rate);
+
+            return peaks;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -99,6 +130,56 @@ mod tests{
             assert!((l[i] - y4[i]).abs() < 1e-6);
         }
     }
+
+    #[test]
+    fn formant_detection_test() {
+        let lpc = [  1.        , -1.75325333,  1.97953403, -1.80343314,  1.20047156,
+                     0.00740131, -0.46918192,  0.74669944, -0.81144139,  0.5992474 ,
+                    -0.22257812,  0.12155728,  0.04168977];
+        let fs = 11025.0f64; // sampling rate
+        let peaks = lpc::formant_detection(&lpc, fs);
+        let answers = [654.0, 1131.0, 2382.0, 2826.0, 3539.0];
+        let epsilon = 10.0;
+
+        let mut check = [false; 5];
+        for peak in peaks {
+            let mut check2 = false;
+            for i in 0..5 {
+                check[i] = check[i] || ((peak - answers[i]).abs() < epsilon);
+                check2 = check2 || (peak - answers[i]).abs() < epsilon;
+            }
+  
+            assert!(check2);
+        }
+        
+        for c in check { assert!(c); }
+    }
+
+    #[test]
+    fn peak_detection_test() {
+        let lpc = [  1.        , -1.75325333,  1.97953403, -1.80343314,  1.20047156,
+                     0.00740131, -0.46918192,  0.74669944, -0.81144139,  0.5992474 ,
+                    -0.22257812,  0.12155728,  0.04168977];
+        let fs = 11025.0f64; // sampling rate
+        let peaks = lpc::peak_detection(&lpc, fs);
+
+        const PEAKS_NUM: usize = 11;
+        let epsilon = 10.0;
+        let answers: [f64; PEAKS_NUM] = [654.0, 1131.0, 2382.0, 2826.0, 3539.0, -5512.0, -2826.0, -3539.0, -2382.0, -1131.0, -654.0];
+
+        let mut check: [bool; PEAKS_NUM] = [false; PEAKS_NUM];
+        for peak in peaks {
+            let mut check2 = false;
+            for i in 0..PEAKS_NUM {
+                check[i] = check[i] || ((peak - answers[i]).abs() < epsilon);
+                check2 = check2 || (peak - answers[i]).abs() < epsilon;
+            }
+    
+            assert!(check2);
+        }
+        
+        for c in check { assert!(c); }
+    }
 }
 
 
@@ -118,4 +199,5 @@ fn basic_fft() {
         println!("{}", buffer[i].re);
     }
 }
+
 
