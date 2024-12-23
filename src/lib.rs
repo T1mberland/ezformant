@@ -58,10 +58,10 @@ pub fn lpc_filter_freq_response(
         data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
     }
 
-    let r = lpc::autocorrelate(&data, lpc_order);
-
     // In `lpc_filter_freq_responce` before autocorrelation
     lpc::pre_emphasis(&mut data, 0.97);
+
+    let r = lpc::autocorrelate(&data, lpc_order);
 
     match lpc::levinson(&data, lpc_order, &r) {
         (a,_e) => {
@@ -90,10 +90,10 @@ pub fn lpc_filter_freq_response_with_peaks(
         data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
     }
 
-    let r = lpc::autocorrelate(&data, lpc_order);
-
     // In `lpc_filter_freq_responce` before autocorrelation
     lpc::pre_emphasis(&mut data, 0.97);
+
+    let r = lpc::autocorrelate(&data, lpc_order);
 
     match lpc::levinson(&data, lpc_order, &r) {
         (a,_e) => {
