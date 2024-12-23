@@ -7,63 +7,13 @@ async function start() {
   try {
     await init();
 
-  const stream = await navigator.mediaDevices.getUserMedia({ 
-    audio: {
-      autoGainControl: false,
-      noiseSuppression: false,
-      echoCancellation: false
-    }
-  });
-  const audioContext = new AudioContext();
-  const source = audioContext.createMediaStreamSource(stream);
-  const analyser = audioContext.createAnalyser();
-  source.connect(analyser);
-
-  analyser.fftSize = 1024;
-  const bufferLength = analyser.fftSize;
-  const dataArray = new Float32Array(bufferLength);
-  const filterDataArray = new Float32Array(bufferLength);
-  const sampleRate = audioContext.sampleRate;
-
-  // Precompute logarithmic frequency boundaries
-  const minFrequency = 20; // Minimum frequency to display
-  const maxFrequency = sampleRate / 2; // Nyquist frequency
-
-  const logMin = Math.log10(minFrequency);
-  const logMax = Math.log10(maxFrequency);
-  const logRange = logMax - logMin;
-
-  // Function to get frequency for a given bin index
-  function getFrequency(index) {
-    return index * sampleRate / analyser.fftSize;
-  }
-
-  function frequencyToPosition(freq) {
-    return (Math.log10(freq) - logMin) / logRange * canvas.width;
-  }
-
-  // Initialize the averaged spectrum array
-  let avgSpectrum = null;
-  const alpha = 0.1; // Smoothing factor (0 < alpha <= 1)
-
-  function drawSpectrum() {
-    analyser.getFloatTimeDomainData(dataArray);
-
-    const spectrum = process_audio(Array.from(dataArray), 0); // calculates FFT here.
-
-    // Initialize avgSpectrum on the first run
-    if (!avgSpectrum) {
-      avgSpectrum = new Array(spectrum.length).fill(0);
-      for (let i = 0; i < spectrum.length; i++) {
-        avgSpectrum[i] = spectrum[i];
-      }
-    } else {
-      // Update avgSpectrum using Exponential Moving Average (EMA)
-      for (let i = 0; i < spectrum.length; i++) {
-        avgSpectrum[i] = alpha * spectrum[i] + (1 - alpha) * avgSpectrum[i];
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      audio: {
+        autoGainControl: false,
+        noiseSuppression: false,
+        echoCancellation: false
       }
     });
-
     const audioContext = new AudioContext();
     await audioContext.resume(); // Ensure AudioContext is running
     const source = audioContext.createMediaStreamSource(stream);
@@ -169,6 +119,8 @@ async function start() {
       //console.log(lpc_filter_freq_response_with_peaks(Array.from(dataArray), sampleRate));
 
       const graphSize = 1024;
+      //const formantsAndFreqResponce = lpc_filter_freq_response_with_peaks(Array.from(dataArray), 16, sampleRate, graphSize);
+      //const freqResponce = formantsAndFreqResponce;
       const freqResponce = lpc_filter_freq_response(Array.from(dataArray), 16, sampleRate, graphSize);
       
       if (freqResponce.every(value => value === 0)) {
@@ -201,12 +153,10 @@ async function start() {
           ctx.lineTo(xPos, yPos);
         }
       }
-
       ctx.stroke();
 
-      ctx.fillText(Math.round(freq) + ' Hz', x, canvas.height - 25);
+      requestAnimationFrame(drawLPCFilter);
     }
-  }
 
     drawSpectrum();
     drawLPCFilter();

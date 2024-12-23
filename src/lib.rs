@@ -100,6 +100,7 @@ pub fn lpc_filter_freq_response_with_peaks(
     let r = lpc::autocorrelate(&data, lpc_order);
     let (lpc_coeff, _) = lpc::levinson(&data, lpc_order, &r);
     let formants = lpc::formant_detection(&lpc_coeff, sample_rate);
+    //let formants = vec![0.0; FORMANT_NUM];
     let lpc_freq_response: Vec<f64> =
             lpc::compute_frequency_response(&lpc_coeff, sample_rate, num_points)
                 .into_iter()
