@@ -1,4 +1,4 @@
-import init, { process_audio, lpc_filter_freq_response, lpc_filter_freq_response_with_peaks } from './pkg/ezformant.js';
+import init, { process_audio, lpc_filter_freq_response, lpc_filter_freq_response_with_peaks, formant_detection } from './pkg/ezformant.js';
 
 const canvas = document.getElementById('spectrum');
 const ctx = canvas.getContext('2d');
@@ -26,6 +26,8 @@ async function start() {
     const dataArray = new Float32Array(fftSize);
     const spectrum = new Float32Array(bufferLength);
     const sampleRate = audioContext.sampleRate;
+
+    let formant1 = 0.0;
 
     // Precompute logarithmic frequency boundaries
     const minFrequency = 20; // Minimum frequency to display
@@ -155,10 +157,24 @@ async function start() {
       }
       ctx.stroke();
 
+      ctx.strokeStyle = "white";
+      ctx.beginPath();
+        const xPos = frequencyToPosition(formant1);
+        ctx.moveTo(xPos, 0);
+        ctx.lineTo(xPos, canvas.height);
+      ctx.stroke();
+
       requestAnimationFrame(drawLPCFilter);
     }
 
-    function calcFormants() {}
+    setInterval(calcFormants, 500); // Run `calcFormants` every 500 milliseconds
+
+    function calcFormants() {
+      /* Heavy function here!! */
+      const formants = formant_detection(Array.from(dataArray), 14, sampleRate);
+      formant1 = formants[0];
+      //console.log("called!");
+    }
 
     drawSpectrum();
     drawLPCFilter();
