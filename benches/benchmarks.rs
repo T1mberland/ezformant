@@ -33,16 +33,26 @@ fn read_audio_data() -> Vec<f64> {
     data
 }
 
+
 fn criterion_bench(c: &mut Criterion) {
     let data = read_audio_data();
+    const FIXED_LPC_ORDER: usize = 14;
 
     c.bench_function("bench test", |b| b.iter(|| {
-        //formant_detection(data.clone(), 16, 441000f64);
-        formant_detection_fixed(&data[..2048], 16, 441000f64);
+        // Test 1
+        //formant_detection(data.clone(), FIXED_LPC_ORDER, 441000f64);
+
+        
+        // Tets2: Faster
+        let mut tmp: [f64; FIXED_LPC_ORDER+1] = [0.0;FIXED_LPC_ORDER+1];
+        for i in 0..=FIXED_LPC_ORDER {
+            tmp[i] = data[i];
+        }
+        formant_detection_fixed(&tmp, 441000.0f64);
     }));
 }
 
-fn peak_detection_fixed(lpc_coeffs: &[f64; 2048], sample_rate: f64) -> Vec<f64> {
+fn peak_detection_fixed<const N:usize>(lpc_coeffs: &[f64; N], sample_rate: f64) -> Vec<f64> {
     const EPSILON: f64 = 0.001;
     const MAX_ITERATIONS: u32 = 15;
     let mut solver = AberthSolver::new();
@@ -66,7 +76,7 @@ fn peak_detection_fixed(lpc_coeffs: &[f64; 2048], sample_rate: f64) -> Vec<f64> 
     peaks
 }
 
-pub fn formant_detection_fixed(lpc_coeffs: &[f64; 2048], sample_rate: f64) -> Vec<f64> {
+pub fn formant_detection_fixed<const N:usize>(lpc_coeffs: &[f64; N], sample_rate: f64) -> Vec<f64> {
     let peaks = peak_detection_fixed(lpc_coeffs, sample_rate);
     let mut formants = Vec::with_capacity(peaks.len());
 
