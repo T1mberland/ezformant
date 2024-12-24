@@ -111,7 +111,7 @@ pub fn compute_frequency_response(
         let denominator: Complex<f64> = lpc_coeffs
             .iter()
             .enumerate()
-            .map(|(k, &a_k)| z.powi(-(k as i32)) * a_k)
+            .map(|(k, &a_k)| z.powi(k as i32) * a_k)
             .sum();
         let h = Complex::new(1.0, 0.0) / denominator; 
         response.push((freq, h.norm()));
@@ -131,7 +131,13 @@ pub fn peak_detection(lpc_coeffs: &[f64], sample_rate: f64) -> Vec<f64> {
 
     for root in roots {
         let theta = root.arg();
-        peaks.push(theta * sample_rate / 2.0 / std::f64::consts::PI);
+        if 0.0 <= theta {
+            peaks.push(theta * sample_rate / 2.0 / std::f64::consts::PI);
+        } else if - std::f64::consts::PI <= theta && theta < 0.0 {
+            peaks.push((theta + 2.0 * std::f64::consts::PI) * sample_rate / 2.0 / std::f64::consts::PI);
+        } else {
+            // Won't happen
+        }
     }
 
     peaks
@@ -147,5 +153,8 @@ pub fn formant_detection(lpc_coeffs: &[f64], sample_rate: f64) -> Vec<f64> {
         formants.push(peak);
     }
 
+    formants.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
     formants
 }
+
