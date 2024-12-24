@@ -185,8 +185,21 @@ async function start() {
 
     setInterval(calcFormants, 500); // Run `calcFormants` every 500 milliseconds
 
+    function downsample(data, factor) {
+      const downsampled = [];
+      for (let i = 0; i < data.length; i += factor) {
+        downsampled.push(data[i]);
+      }
+      return downsampled;
+    }
+
     function calcFormants() {
-      const formants = formant_detection(Array.from(dataArray), 14, sampleRate);
+      const downsampleFactor = 4;
+      const downsampledData = downsample(Array.from(dataArray), downsampleFactor);
+      const downsampledSampleRate = sampleRate / downsampleFactor;
+      //const LPC_ORDER = 2*downsampledSampleRate/1000;
+
+      const formants = formant_detection(Array.from(downsampledData), 14, downsampledSampleRate);
       formant1 = formants[0];
       formant2 = formants[1];
       formant3 = formants[2];
