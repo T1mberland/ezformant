@@ -1,4 +1,4 @@
-import init, { process_audio, lpc_filter_freq_response, lpc_filter_freq_response_with_peaks, formant_detection } from './pkg/ezformant.js';
+import init, { process_audio, lpc_filter_freq_response, formant_detection } from './pkg/ezformant.js';
 
 const canvas = document.getElementById('spectrum');
 const ctx = canvas.getContext('2d');
@@ -28,6 +28,9 @@ async function start() {
     const sampleRate = audioContext.sampleRate;
 
     let formant1 = 0.0;
+    let formant2 = 0.0;
+    let formant3 = 0.0;
+    let formant4 = 0.0;
 
     // Precompute logarithmic frequency boundaries
     const minFrequency = 20; // Minimum frequency to display
@@ -118,11 +121,7 @@ async function start() {
     function drawLPCFilter() {
       analyser.getFloatTimeDomainData(dataArray);
 
-      //console.log(lpc_filter_freq_response_with_peaks(Array.from(dataArray), sampleRate));
-
       const graphSize = 1024;
-      //const formantsAndFreqResponce = lpc_filter_freq_response_with_peaks(Array.from(dataArray), 16, sampleRate, graphSize);
-      //const freqResponce = formantsAndFreqResponce;
       const freqResponce = lpc_filter_freq_response(Array.from(dataArray), 16, sampleRate, graphSize);
       
       if (freqResponce.every(value => value === 0)) {
@@ -157,9 +156,26 @@ async function start() {
       }
       ctx.stroke();
 
+      // Draw the 1st formant
       ctx.strokeStyle = "white";
       ctx.beginPath();
-        const xPos = frequencyToPosition(formant1);
+        let xPos = frequencyToPosition(formant1);
+        ctx.moveTo(xPos, 0);
+        ctx.lineTo(xPos, canvas.height);
+      ctx.stroke();
+
+      // Draw the 2nd formant
+      ctx.strokeStyle = "red";
+      ctx.beginPath();
+        xPos = frequencyToPosition(formant2);
+        ctx.moveTo(xPos, 0);
+        ctx.lineTo(xPos, canvas.height);
+      ctx.stroke();
+
+      // Draw the 3rd formant
+      ctx.strokeStyle = "green";
+      ctx.beginPath();
+        xPos = frequencyToPosition(formant3);
         ctx.moveTo(xPos, 0);
         ctx.lineTo(xPos, canvas.height);
       ctx.stroke();
@@ -170,10 +186,11 @@ async function start() {
     setInterval(calcFormants, 500); // Run `calcFormants` every 500 milliseconds
 
     function calcFormants() {
-      /* Heavy function here!! */
       const formants = formant_detection(Array.from(dataArray), 14, sampleRate);
       formant1 = formants[0];
-      //console.log("called!");
+      formant2 = formants[1];
+      formant3 = formants[2];
+      formant4 = formants[3];
     }
 
     drawSpectrum();
