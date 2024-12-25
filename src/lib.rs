@@ -40,6 +40,52 @@ extern "C" {
     fn log_many(a: &str, b: &str);
 }
 
+fn downsampler(input: &[f64], factor: usize) -> Vec<f64> {
+    let mut output: Vec<f64> = Vec::with_capacity(input.len() / factor);
+    for value in input.iter().step_by(factor) {
+        output.push(*value);
+    }
+
+    output
+}
+
+#[wasm_bindgen]
+pub fn lpc_filter_freq_response_with_downsampling(
+    original_data: Vec<f64>, 
+    lpc_order: usize, 
+    original_sample_rate: f64, 
+    downsample_factor: usize,
+    num_points: usize
+) -> Vec<f64> {
+    let mut data = downsampler(&original_data, downsample_factor);
+    let sample_rate = original_sample_rate / (downsample_factor as f64);
+
+    // Subtract the mean to make the signal zero-mean
+    let mean = data.iter().copied().sum::<f64>() / data.len() as f64;
+    for sample in data.iter_mut() {
+        *sample -= mean;
+    }
+
+    // Optionally, apply windowing (e.g., Hamming window)
+    for i in 0..data.len() {
+        data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
+    }
+
+    // In `lpc_filter_freq_responce` before autocorrelation
+    lpc::pre_emphasis(&mut data, 0.97);
+
+    let r = lpc::autocorrelate(&data, lpc_order);
+
+    match lpc::levinson(lpc_order, &r) {
+        (a,_e) => {
+            lpc::compute_frequency_response(&a, sample_rate, num_points)
+                .into_iter()
+                .map(|(_, mag)| mag)
+                .collect()
+        }
+    }
+}
+
 #[wasm_bindgen]
 pub fn lpc_filter_freq_response(
     mut data: Vec<f64>, 
@@ -149,9 +195,43 @@ pub fn formant_detection(
     formants
 }
 
+// returns [F1,f2,f3,f4]
+#[wasm_bindgen]
+pub fn formant_detection_with_downsampling(
+    original_data: Vec<f64>, 
+    lpc_order: usize, 
+    original_sample_rate: f64,
+    downsample_factor: usize,
+) -> Vec<f64> {
+    let mut data = downsampler(&original_data, downsample_factor);
+    let sample_rate = original_sample_rate / (downsample_factor as f64);
+
+    const FORMANT_NUM: usize = 4;
+
+    // Subtract the mean to make the signal zero-mean
+    let mean = data.iter().copied().sum::<f64>() / data.len() as f64;
+    for sample in data.iter_mut() {
+        *sample -= mean;
+    }
+
+    // Apply windowing (e.g., Hamming window)
+    for i in 0..data.len() {
+        data[i] *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * i as f64 / (data.len() as f64 - 1.0)).cos();
+    }
+
+    lpc::pre_emphasis(&mut data, 0.97);
+
+    let r = lpc::autocorrelate(&data, lpc_order);
+    let (lpc_coeff, _) = lpc::levinson(lpc_order, &r);
+    let formants = lpc::formant_detection(&lpc_coeff, sample_rate);
+
+    formants
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
+    use std::f64::consts::PI;
 
     #[test]
     fn autocorrelate_test() {
@@ -225,6 +305,79 @@ mod tests{
         }
         
         for c in check { assert!(c); }
+    }
+    
+    /// Helper function to manually downsample the data.
+    fn manual_downsample(data: &[f64], factor: usize) -> Vec<f64> {
+        data.iter()
+            .step_by(factor)
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn test_lpc_filter_freq_response_with_downsampling() {
+        // Parameters for the synthetic test signal
+        let original_sample_rate = 16000.0; // in Hz
+        let frequency = 440.0; // A4 note in Hz
+        let duration = 1.0; // in seconds
+        let num_samples = (original_sample_rate * duration) as usize;
+
+        // Generate a sine wave as the original data
+        let original_data: Vec<f64> = (0..num_samples)
+            .map(|n| (2.0 * PI * frequency * (n as f64) / original_sample_rate).sin())
+            .collect();
+
+        // LPC parameters
+        let lpc_order = 10;
+        let downsample_factor = 2;
+        let num_points = 512;
+
+        // Call the function that includes downsampling
+        let response_with_downsampling = lpc_filter_freq_response_with_downsampling(
+            original_data.clone(),
+            lpc_order,
+            original_sample_rate,
+            downsample_factor,
+            num_points,
+        );
+
+        // Manually downsample the original data
+        let downsampled_data = manual_downsample(&original_data, downsample_factor);
+        let downsampled_sample_rate = original_sample_rate / (downsample_factor as f64);
+
+        // Call the function without downsampling
+        let response_without_downsampling = lpc_filter_freq_response(
+            downsampled_data.clone(),
+            lpc_order,
+            downsampled_sample_rate,
+            num_points,
+        );
+
+        // Define an acceptable error tolerance
+        let epsilon = 1e-3;
+
+        // Ensure both responses have the same number of points
+        assert_eq!(
+            response_with_downsampling.len(),
+            response_without_downsampling.len(),
+            "Frequency responses have different lengths"
+        );
+
+        // Compare each point in the frequency responses
+        for (i, (resp_ds, resp)) in response_with_downsampling
+            .iter()
+            .zip(response_without_downsampling.iter())
+            .enumerate()
+        {
+            let diff = (resp_ds - resp).abs();
+            if diff > epsilon {
+                panic!(
+                    "Frequency response differs at index {}: with_downsampling = {}, without_downsampling = {}, difference = {} exceeds epsilon = {}",
+                    i, resp_ds, resp, diff, epsilon
+                );
+            }
+        }
     }
 }
 
