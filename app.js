@@ -1,4 +1,4 @@
-import init, { process_audio, lpc_filter_freq_response, formant_detection } from './pkg/ezformant.js';
+import init, { process_audio, lpc_filter_freq_response, lpc_filter_freq_response_with_downsampling, formant_detection, formant_detection_with_downsampling } from './pkg/ezformant.js';
 
 const canvas = document.getElementById('spectrum');
 const ctx = canvas.getContext('2d');
@@ -26,6 +26,7 @@ async function start() {
     const dataArray = new Float32Array(fftSize);
     const spectrum = new Float32Array(bufferLength);
     const sampleRate = audioContext.sampleRate;
+    const downsampleFactor = 4;
 
     let formant1 = 0.0;
     let formant2 = 0.0;
@@ -122,7 +123,9 @@ async function start() {
       analyser.getFloatTimeDomainData(dataArray);
 
       const graphSize = 1024;
-      const freqResponce = lpc_filter_freq_response(Array.from(dataArray), 16, sampleRate, graphSize);
+      //const freqResponce = lpc_filter_freq_response(Array.from(dataArray), 16, sampleRate, graphSize);
+      const freqResponce = lpc_filter_freq_response_with_downsampling(Array.from(dataArray), 16, sampleRate, downsampleFactor, graphSize);
+
       
       if (freqResponce.every(value => value === 0)) {
         requestAnimationFrame(drawLPCFilter);
@@ -138,7 +141,7 @@ async function start() {
       let started = false;
 
       for (let i = 0; i < graphSize; ++i) {
-        const freq = i * maxFrequency / graphSize;
+        const freq = i * maxFrequency / graphSize / downsampleFactor;
         if (freq < minFrequency) continue;
 
         const xPos = frequencyToPosition(freq);
@@ -194,12 +197,15 @@ async function start() {
     }
 
     function calcFormants() {
+      /*
       const downsampleFactor = 4;
       const downsampledData = downsample(Array.from(dataArray), downsampleFactor);
       const downsampledSampleRate = sampleRate / downsampleFactor;
+      */
       //const LPC_ORDER = 2*downsampledSampleRate/1000;
 
-      const formants = formant_detection(Array.from(downsampledData), 14, downsampledSampleRate);
+      //const formants = formant_detection(Array.from(downsampledData), 14, downsampledSampleRate);
+      const formants = formant_detection_with_downsampling(Array.from(dataArray), 14, sampleRate, downsampleFactor);
       formant1 = formants[0];
       formant2 = formants[1];
       formant3 = formants[2];
