@@ -8,13 +8,14 @@ let formant1 = 0.0;
 let formant2 = 0.0;
 let formant3 = 0.0;
 let formant4 = 0.0;
+let freqResponse = []; // To store LPC filter frequency response
 
 // Initialize the Web Worker as an ES Module
 const formantWorker = new Worker('formantWorker.mjs', { type: 'module' });
 
 // Handle messages from the worker
 formantWorker.onmessage = function(e) {
-  const { type, status, formants, error } = e.data;
+  const { type, status, formants, freqResponse: workerFreqResponse, error } = e.data;
 
   if (type === 'init') {
     if (status === 'success') {
@@ -29,6 +30,13 @@ formantWorker.onmessage = function(e) {
       [formant1, formant2, formant3, formant4] = formants;
     } else {
       console.error('Formant detection failed:', error);
+    }
+  }
+  else if (type === 'calcLPCFilter') {
+    if (status === 'success') {
+      freqResponse = workerFreqResponse;
+    } else {
+      console.error('LPC Filter calculation failed:', error);
     }
   }
 };
@@ -58,6 +66,8 @@ async function start() {
     const spectrum = new Float32Array(bufferLength);
     const sampleRate = audioContext.sampleRate;
     const downsampleFactor = 4;
+
+    const graphSize = 1024; // Define graph size for LPC filter frequency response
 
     // Precompute logarithmic frequency boundaries
     const minFrequency = 20; // Minimum frequency to display
@@ -148,41 +158,70 @@ async function start() {
     function drawLPCFilter() {
       analyser.getFloatTimeDomainData(dataArray);
 
-      const graphSize = 1024;
-      
-      // Instead of calling WASM functions directly, we need to offload this to the worker
-      // Remove or comment out the following lines:
-      // const freqResponce = lpc_filter_freq_response_with_downsampling(Array.from(dataArray), 16, sampleRate, downsampleFactor, graphSize);
-      // 
-      // Instead, you can request the worker to compute the frequency response if needed.
+      // Send data to the worker for LPC filter frequency response calculation
+      formantWorker.postMessage({
+        type: 'calcLPCFilter',
+        data: {
+          audioData: Array.from(dataArray), // Transfer as an array
+          lpcOrder: 16, // Example LPC order, adjust as needed
+          sampleRate: sampleRate,
+          downsampleFactor: downsampleFactor,
+          graphSize: graphSize
+        }
+      });
 
-      // For now, let's keep the existing code and focus on moving calcFormants to the worker
-      // If you also want to move lpc_filter_freq_response_with_downsampling, you can follow similar steps
+      // Since the worker operates asynchronously, the drawing will occur in the worker's message handler
+      // Thus, we need to set up a mechanism to wait for the freqResponse before drawing
 
-      // Proceeding with existing implementation
+      // For simplicity, we'll use a timeout to allow the worker to process and respond
+      // Alternatively, you can implement a more robust synchronization mechanism
 
-      const freqResponce = lpc_filter_freq_response_with_downsampling(Array.from(dataArray), 16, sampleRate, downsampleFactor, graphSize);
+      // Clear the previous LPC filter drawing
+      // Note: Adjust this if you want to overlay or update incrementally
+      // For now, we'll redraw the entire canvas
+      // But since `drawSpectrum` also clears the canvas, ensure the order is correct
 
-      if (freqResponce.every(value => value === 0)) {
-        requestAnimationFrame(drawLPCFilter);
+      // Instead of directly drawing here, handle drawing in the worker's message handler
+      // and update `freqResponse`, then trigger drawing here.
+
+      // Here's an example approach:
+      // When the worker responds with `calcLPCFilter`, trigger the actual drawing
+
+      // To avoid multiple overlapping drawings, ensure that the drawing is handled after receiving data
+
+      // Implement a flag or directly handle drawing in the message handler
+      // For clarity, let's handle drawing here after receiving data
+
+      // We'll define a separate function to handle drawing after receiving `freqResponse`
+      // The actual drawing will be triggered in the worker's message handler
+
+      // Therefore, nothing else is needed here
+
+      requestAnimationFrame(drawLPCFilter);
+    }
+
+    // Define a function to perform the actual drawing after receiving `freqResponse`
+    function performDrawLPCFilter() {
+      if (freqResponse.length === 0) {
+        // No data received yet
         return;
       }
 
       // Normalize the frequency response
-      const maxResponse = Math.max(...freqResponce);
+      const maxResponse = Math.max(...freqResponse);
       const normalizeConst = maxResponse > 0 ? maxResponse : 1;
 
       ctx.strokeStyle = "red";
       ctx.beginPath();
       let started = false;
 
-      for (let i = 0; i < graphSize; ++i) {
-        const freq = i * maxFrequency / graphSize / downsampleFactor;
+      for (let i = 0; i < freqResponse.length; ++i) {
+        const freq = i * maxFrequency / freqResponse.length / downsampleFactor;
         if (freq < minFrequency) continue;
 
         const xPos = frequencyToPosition(freq);
 
-        const logResponse = Math.log10(freqResponce[i] + 1); // Add 1 to avoid log10(0)
+        const logResponse = Math.log10(freqResponse[i] + 1); // Add 1 to avoid log10(0)
         const logMaxResponse = Math.log10(normalizeConst + 1);
         const yPos = canvas.height - (logResponse / logMaxResponse) * canvas.height;
 
@@ -195,6 +234,11 @@ async function start() {
       }
       ctx.stroke();
 
+      // Draw the formants
+      drawFormants();
+    }
+
+    function drawFormants() {
       // Draw the 1st formant
       ctx.strokeStyle = "white";
       ctx.beginPath();
@@ -219,11 +263,17 @@ async function start() {
         ctx.lineTo(xPos, canvas.height);
       ctx.stroke();
 
-      requestAnimationFrame(drawLPCFilter);
+      // Optionally, draw the 4th formant if needed
+      // ctx.strokeStyle = "blue";
+      // ctx.beginPath();
+      //   xPos = frequencyToPosition(formant4);
+      //   ctx.moveTo(xPos, 0);
+      //   ctx.lineTo(xPos, canvas.height);
+      // ctx.stroke();
     }
 
     // Set up the interval to calculate formants using the worker
-    setInterval(calcFormants, 100); // Run `calcFormants` every 500 milliseconds
+    setInterval(calcFormants, 500); // Run `calcFormants` every 500 milliseconds
 
     function calcFormants() {
       // Send data to the worker for processing
@@ -241,8 +291,63 @@ async function start() {
     // Initialize the worker by sending an 'init' message
     formantWorker.postMessage({ type: 'init' });
 
+    // Modify drawLPCFilter to request frequency response from worker
+    function triggerDrawLPCFilter() {
+      analyser.getFloatTimeDomainData(dataArray);
+
+      // Send data to the worker for LPC filter frequency response calculation
+      formantWorker.postMessage({
+        type: 'calcLPCFilter',
+        data: {
+          audioData: Array.from(dataArray), // Transfer as an array
+          lpcOrder: 16, // Example LPC order, adjust as needed
+          sampleRate: sampleRate,
+          downsampleFactor: downsampleFactor,
+          graphSize: graphSize
+        }
+      });
+
+      // The actual drawing will be performed when the worker responds
+    }
+
+    // Update the drawLPCFilter function to request data and perform drawing
+    function drawLPCFilterWrapper() {
+      triggerDrawLPCFilter();
+      requestAnimationFrame(drawLPCFilterWrapper);
+    }
+
+    // Listen for worker messages to perform LPC filter drawing
+    formantWorker.onmessage = function(e) {
+      const { type, status, formants, freqResponse: workerFreqResponse, error } = e.data;
+
+      if (type === 'init') {
+        if (status === 'success') {
+          console.log('Worker initialized successfully.');
+        } else {
+          console.error('Worker initialization failed:', error);
+          alert('Failed to initialize formant detection worker.');
+        }
+      }
+      else if (type === 'calcFormants') {
+        if (status === 'success') {
+          [formant1, formant2, formant3, formant4] = formants;
+        } else {
+          console.error('Formant detection failed:', error);
+        }
+      }
+      else if (type === 'calcLPCFilter') {
+        if (status === 'success') {
+          freqResponse = workerFreqResponse;
+          performDrawLPCFilter(); // Perform drawing with the received data
+        } else {
+          console.error('LPC Filter calculation failed:', error);
+        }
+      }
+    };
+
+    // Start the drawing loops
     drawSpectrum();
-    drawLPCFilter();
+    drawLPCFilterWrapper();
   } catch (error) {
     console.error('Error accessing audio stream:', error);
     alert('Could not access the microphone. Please check your permissions.');
