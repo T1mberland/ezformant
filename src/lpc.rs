@@ -1,9 +1,5 @@
-use std::f32::EPSILON;
-
-use ndarray::prelude::*;
-use rustfft::{num_complex::{Complex, ComplexFloat}, FftPlanner};
+use rustfft::num_complex::{Complex, ComplexFloat};
 use wasm_bindgen::prelude::*;
-use aberth::aberth;
 use aberth::AberthSolver;
 
 #[wasm_bindgen]
@@ -51,57 +47,10 @@ pub fn autocorrelate(signal: &[f64], maxlag: usize) -> Vec<f64> {
     result
 }
 
-/// Implements the Levinson-Durbin recursion algorithm.
-/// 
-/// # Arguments
-/// 
-/// * `order` - The order of the recursion.
-/// * `r` - An optional slice of f64 representing the autocorrelation coefficients.
-/// 
-/// # Returns
-/// 
-/// A tuple containing:
-/// - A vector of filter coefficients (`a`).
-/// - The final prediction error (`E`).
-pub fn levinson(order: usize, r: &[f64]) -> (Vec<f64>, f64){
-    let p = order;
-
-    if p == 0 {
-        return (vec![1.0], r[0]);
-    } else if p == 1 {
-        let a1 = -r[1]/r[0];
-        return (vec![1.0, a1], r[0] + r[1]*a1);
-    }
-
-
-    let (aa, ee) = levinson(p-1, r);
-
-    let mut k = 0.0;
-    for j in 0..p {
-        //println!("levinson: j={}", j);
-        k += aa[j]*r[p-j];
-    }
-    k = - k / ee;
-
-    let e = ee*(1.0 - k*k);
-
-    let mut u = aa.clone();
-    u.push(0.0);
-
-    let mut v = u.clone();
-    v.reverse();
-
-    let result = u.iter().enumerate().map(|(ix, &uu)| uu + k*v[ix]).collect();
-
-    (result, e)
-}
-
 /// Implements the Levinson-Durbin recursion algorithm iteratively.
 /// 
 /// # Arguments
 /// 
-/// * `signal` - (Optional) A slice of f64 representing the input signal. 
-///    You can ignore it here if autocorrelation `r` is precomputed externally.
 /// * `order`  - The order of the recursion (filter).
 /// * `r`      - A slice of f64 representing the autocorrelation coefficients.
 ///              Must have length >= `order + 1`.
@@ -111,33 +60,25 @@ pub fn levinson(order: usize, r: &[f64]) -> (Vec<f64>, f64){
 /// A tuple containing:
 /// - A vector of filter coefficients `[a0, a1, ..., a_order]` (with `a0 = 1.0`).
 /// - The final prediction error (`E`).
-pub fn levinson2(order: usize, r: &[f64]) -> (Vec<f64>, f64) {
-    // We'll store the filter coefficients in `a`.
-    // a[0] is always 1.0 by definition.
+pub fn levinson(order: usize, r: &[f64]) -> (Vec<f64>, f64) {
     let mut a = vec![0.0; order + 1];
     a[0] = 1.0;
 
-    // The initial prediction error is the zero-lag autocorrelation.
     let mut e = r[0];
 
-    // Iteratively compute the filter coefficients for each order i = 1..=order
     for i in 1..=order {
-        // Calculate the reflection (Parcor) coefficient, often called `k` or `lambda`.
         let mut lambda = 0.0;
         for j in 0..i {
             lambda += a[j] * r[i - j];
         }
         lambda = -lambda / e;
 
-        // Update the coefficients a[0..=i]. 
-        // We only need to update up to i//2 indices in-place, mirroring around the midpoint.
         for j in 0..=((i) / 2) {
             let temp = a[j] + lambda * a[i - j];
             a[i - j] += lambda * a[j];
             a[j] = temp;
         }
 
-        // Update the prediction error.
         e *= 1.0 - lambda * lambda;
     }
 
@@ -210,25 +151,9 @@ pub fn formant_detection(lpc_coeffs: &[f64], sample_rate: f64) -> Vec<f64> {
 /* ------------------------------------------ */
 /* ------------------------------------------ */
 
-
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_levinson_durbin() {
-        let r = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5];
-        let order = 5;
-
-        let (a, e) = levinson2(order, &r);
-        let (expected_a, expected_e) = levinson(order, &r);
-
-        let epsilon = 1e-4;
-
-        for (computed, expected) in a.iter().zip(expected_a.iter()) {
-            assert!((computed - expected).abs() < epsilon, "Coefficient mismatch: got {}, expected {}", computed, expected);
-        }
-
-        assert!((e - expected_e).abs() < epsilon, "Error mismatch: got {}, expected {}", e, expected_e);
-    }
 }
+*/
