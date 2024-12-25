@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::*;
 mod lpc;
 
 #[wasm_bindgen]
-pub fn process_audio(data: Vec<f32>, lpc_order: usize) -> Vec<f32> {
+pub fn process_audio(data: Vec<f32>) -> Vec<f32> {
     let len = data.len();
     let mut fft_input: Vec<Complex<f32>> = data.iter().map(|&x| Complex::new(x, 0.0)).collect();
     let mut planner = FftPlanner::<f32>::new();
@@ -227,23 +227,4 @@ mod tests{
         for c in check { assert!(c); }
     }
 }
-
-
-
-fn basic_fft() {
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(2048);
-
-    let mut buffer = vec![Complex{ re: 0.0f32, im: 0.0f32}; 2048];
-    for i in 0..2048 {
-        buffer[i] = Complex { re: f32::cos(i as f32), im: 0.0f32 };
-    }
-
-    fft.process(&mut buffer);
-    
-    for i in 0..2048 {
-        println!("{}", buffer[i].re);
-    }
-}
-
 
