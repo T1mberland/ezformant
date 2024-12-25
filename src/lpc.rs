@@ -55,7 +55,6 @@ pub fn autocorrelate(signal: &[f64], maxlag: usize) -> Vec<f64> {
 /// 
 /// # Arguments
 /// 
-/// * `signal` - A slice of f64 representing the input signal.
 /// * `order` - The order of the recursion.
 /// * `r` - An optional slice of f64 representing the autocorrelation coefficients.
 /// 
@@ -64,7 +63,7 @@ pub fn autocorrelate(signal: &[f64], maxlag: usize) -> Vec<f64> {
 /// A tuple containing:
 /// - A vector of filter coefficients (`a`).
 /// - The final prediction error (`E`).
-pub fn levinson(signal: &[f64], order: usize, r: &[f64]) -> (Vec<f64>, f64){
+pub fn levinson(order: usize, r: &[f64]) -> (Vec<f64>, f64){
     let p = order;
 
     if p == 0 {
@@ -75,7 +74,7 @@ pub fn levinson(signal: &[f64], order: usize, r: &[f64]) -> (Vec<f64>, f64){
     }
 
 
-    let (aa, ee) = levinson(signal, p-1, r);
+    let (aa, ee) = levinson(p-1, r);
 
     let mut k = 0.0;
     for j in 0..p {
@@ -112,7 +111,7 @@ pub fn levinson(signal: &[f64], order: usize, r: &[f64]) -> (Vec<f64>, f64){
 /// A tuple containing:
 /// - A vector of filter coefficients `[a0, a1, ..., a_order]` (with `a0 = 1.0`).
 /// - The final prediction error (`E`).
-pub fn levinson2(signal: &[f64], order: usize, r: &[f64]) -> (Vec<f64>, f64) {
+pub fn levinson2(order: usize, r: &[f64]) -> (Vec<f64>, f64) {
     // We'll store the filter coefficients in `a`.
     // a[0] is always 1.0 by definition.
     let mut a = vec![0.0; order + 1];
@@ -221,8 +220,8 @@ mod tests {
         let r = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5];
         let order = 5;
 
-        let (a, e) = levinson2(&[], order, &r);
-        let (expected_a, expected_e) = levinson(&[], order, &r);
+        let (a, e) = levinson2(order, &r);
+        let (expected_a, expected_e) = levinson(order, &r);
 
         let epsilon = 1e-4;
 
