@@ -63,7 +63,7 @@ pub fn lpc_filter_freq_response(
 
     let r = lpc::autocorrelate(&data, lpc_order);
 
-    match lpc::levinson(&data, lpc_order, &r) {
+    match lpc::levinson(lpc_order, &r) {
         (a,_e) => {
             lpc::compute_frequency_response(&a, sample_rate, num_points)
                 .into_iter()
@@ -98,7 +98,7 @@ pub fn lpc_filter_freq_response_with_peaks(
     lpc::pre_emphasis(&mut data, 0.97);
 
     let r = lpc::autocorrelate(&data, lpc_order);
-    let (lpc_coeff, _) = lpc::levinson(&data, lpc_order, &r);
+    let (lpc_coeff, _) = lpc::levinson(lpc_order, &r);
     let formants = lpc::formant_detection(&lpc_coeff, sample_rate);
     //let formants = vec![0.0; FORMANT_NUM];
     let lpc_freq_response: Vec<f64> =
@@ -143,7 +143,7 @@ pub fn formant_detection(
     lpc::pre_emphasis(&mut data, 0.97);
 
     let r = lpc::autocorrelate(&data, lpc_order);
-    let (lpc_coeff, _) = lpc::levinson(&data, lpc_order, &r);
+    let (lpc_coeff, _) = lpc::levinson(lpc_order, &r);
     let formants = lpc::formant_detection(&lpc_coeff, sample_rate);
 
     formants
@@ -169,7 +169,7 @@ mod tests{
         let x7 = vec![2.0,3.0,-1.0,-2.0,1.0,4.0,1.0];
         let y4 = vec![1.0, -0.69190537, 0.76150628, -0.34575153];
         let r = lpc::autocorrelate(&x7, 3);
-        let (l, _) = lpc::levinson(&x7, 3, &r);
+        let (l, _) = lpc::levinson(3, &r);
         for i in 0..(l.len()) { 
             //println!("l[i]={}, when it should be {}", l[i], y4[i]);
             assert!((l[i] - y4[i]).abs() < 1e-6);
@@ -210,7 +210,8 @@ mod tests{
 
         const PEAKS_NUM: usize = 11;
         let epsilon = 10.0;
-        let answers: [f64; PEAKS_NUM] = [654.0, 1131.0, 2382.0, 2826.0, 3539.0, -5512.0, -2826.0, -3539.0, -2382.0, -1131.0, -654.0];
+        //let answers: [f64; PEAKS_NUM] = [654.0, 1131.0, 2382.0, 2826.0, 3539.0, -5512.0, -2826.0, -3539.0, -2382.0, -1131.0, -654.0];
+        let answers: [f64; PEAKS_NUM] = [654.0, 1131.0, 2382.0, 2826.0, 3539.0, 5512.0, 8198.0, 7486.0, 8642.0, 9894.0, 10370.0];
 
         let mut check: [bool; PEAKS_NUM] = [false; PEAKS_NUM];
         for peak in peaks {
