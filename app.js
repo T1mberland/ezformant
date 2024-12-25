@@ -1,10 +1,41 @@
-import init, { process_audio, lpc_filter_freq_response, lpc_filter_freq_response_with_downsampling, formant_detection, formant_detection_with_downsampling } from './pkg/ezformant.js';
+import init from './pkg/ezformant.js'; // Import only if needed in the main thread
+import { process_audio, lpc_filter_freq_response, lpc_filter_freq_response_with_downsampling } from './pkg/ezformant.js';
 
 const canvas = document.getElementById('spectrum');
 const ctx = canvas.getContext('2d');
 
+let formant1 = 0.0;
+let formant2 = 0.0;
+let formant3 = 0.0;
+let formant4 = 0.0;
+
+// Initialize the Web Worker as an ES Module
+const formantWorker = new Worker('formantWorker.mjs', { type: 'module' });
+
+// Handle messages from the worker
+formantWorker.onmessage = function(e) {
+  const { type, status, formants, error } = e.data;
+
+  if (type === 'init') {
+    if (status === 'success') {
+      console.log('Worker initialized successfully.');
+    } else {
+      console.error('Worker initialization failed:', error);
+      alert('Failed to initialize formant detection worker.');
+    }
+  }
+  else if (type === 'calcFormants') {
+    if (status === 'success') {
+      [formant1, formant2, formant3, formant4] = formants;
+    } else {
+      console.error('Formant detection failed:', error);
+    }
+  }
+};
+
 async function start() {
   try {
+    // Initialize WASM in the main thread if necessary
     await init();
 
     const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -27,11 +58,6 @@ async function start() {
     const spectrum = new Float32Array(bufferLength);
     const sampleRate = audioContext.sampleRate;
     const downsampleFactor = 4;
-
-    let formant1 = 0.0;
-    let formant2 = 0.0;
-    let formant3 = 0.0;
-    let formant4 = 0.0;
 
     // Precompute logarithmic frequency boundaries
     const minFrequency = 20; // Minimum frequency to display
@@ -123,10 +149,20 @@ async function start() {
       analyser.getFloatTimeDomainData(dataArray);
 
       const graphSize = 1024;
-      //const freqResponce = lpc_filter_freq_response(Array.from(dataArray), 16, sampleRate, graphSize);
+      
+      // Instead of calling WASM functions directly, we need to offload this to the worker
+      // Remove or comment out the following lines:
+      // const freqResponce = lpc_filter_freq_response_with_downsampling(Array.from(dataArray), 16, sampleRate, downsampleFactor, graphSize);
+      // 
+      // Instead, you can request the worker to compute the frequency response if needed.
+
+      // For now, let's keep the existing code and focus on moving calcFormants to the worker
+      // If you also want to move lpc_filter_freq_response_with_downsampling, you can follow similar steps
+
+      // Proceeding with existing implementation
+
       const freqResponce = lpc_filter_freq_response_with_downsampling(Array.from(dataArray), 16, sampleRate, downsampleFactor, graphSize);
 
-      
       if (freqResponce.every(value => value === 0)) {
         requestAnimationFrame(drawLPCFilter);
         return;
@@ -186,31 +222,24 @@ async function start() {
       requestAnimationFrame(drawLPCFilter);
     }
 
-    setInterval(calcFormants, 500); // Run `calcFormants` every 500 milliseconds
-
-    function downsample(data, factor) {
-      const downsampled = [];
-      for (let i = 0; i < data.length; i += factor) {
-        downsampled.push(data[i]);
-      }
-      return downsampled;
-    }
+    // Set up the interval to calculate formants using the worker
+    setInterval(calcFormants, 100); // Run `calcFormants` every 500 milliseconds
 
     function calcFormants() {
-      /*
-      const downsampleFactor = 4;
-      const downsampledData = downsample(Array.from(dataArray), downsampleFactor);
-      const downsampledSampleRate = sampleRate / downsampleFactor;
-      */
-      //const LPC_ORDER = 2*downsampledSampleRate/1000;
-
-      //const formants = formant_detection(Array.from(downsampledData), 14, downsampledSampleRate);
-      const formants = formant_detection_with_downsampling(Array.from(dataArray), 14, sampleRate, downsampleFactor);
-      formant1 = formants[0];
-      formant2 = formants[1];
-      formant3 = formants[2];
-      formant4 = formants[3];
+      // Send data to the worker for processing
+      formantWorker.postMessage({
+        type: 'calcFormants',
+        data: {
+          audioData: Array.from(dataArray), // Transfer as an array
+          lpcOrder: 14, // Example LPC order, adjust as needed
+          sampleRate: sampleRate,
+          downsampleFactor: downsampleFactor
+        }
+      });
     }
+
+    // Initialize the worker by sending an 'init' message
+    formantWorker.postMessage({ type: 'init' });
 
     drawSpectrum();
     drawLPCFilter();
