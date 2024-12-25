@@ -97,6 +97,54 @@ pub fn levinson(signal: &[f64], order: usize, r: &[f64]) -> (Vec<f64>, f64){
     (result, e)
 }
 
+/// Implements the Levinson-Durbin recursion algorithm iteratively.
+/// 
+/// # Arguments
+/// 
+/// * `signal` - (Optional) A slice of f64 representing the input signal. 
+///    You can ignore it here if autocorrelation `r` is precomputed externally.
+/// * `order`  - The order of the recursion (filter).
+/// * `r`      - A slice of f64 representing the autocorrelation coefficients.
+///              Must have length >= `order + 1`.
+/// 
+/// # Returns
+/// 
+/// A tuple containing:
+/// - A vector of filter coefficients `[a0, a1, ..., a_order]` (with `a0 = 1.0`).
+/// - The final prediction error (`E`).
+pub fn levinson2(signal: &[f64], order: usize, r: &[f64]) -> (Vec<f64>, f64) {
+    // We'll store the filter coefficients in `a`.
+    // a[0] is always 1.0 by definition.
+    let mut a = vec![0.0; order + 1];
+    a[0] = 1.0;
+
+    // The initial prediction error is the zero-lag autocorrelation.
+    let mut e = r[0];
+
+    // Iteratively compute the filter coefficients for each order i = 1..=order
+    for i in 1..=order {
+        // Calculate the reflection (Parcor) coefficient, often called `k` or `lambda`.
+        let mut lambda = 0.0;
+        for j in 0..i {
+            lambda += a[j] * r[i - j];
+        }
+        lambda = -lambda / e;
+
+        // Update the coefficients a[0..=i]. 
+        // We only need to update up to i//2 indices in-place, mirroring around the midpoint.
+        for j in 0..=((i) / 2) {
+            let temp = a[j] + lambda * a[i - j];
+            a[i - j] += lambda * a[j];
+            a[j] = temp;
+        }
+
+        // Update the prediction error.
+        e *= 1.0 - lambda * lambda;
+    }
+
+    (a, e)
+}
+
 /// Compute the frequency response of the LPC filter
 pub fn compute_frequency_response(
     lpc_coeffs: &[f64], 
@@ -158,3 +206,30 @@ pub fn formant_detection(lpc_coeffs: &[f64], sample_rate: f64) -> Vec<f64> {
     formants
 }
 
+
+/* ------------------------------------------ */
+/* ------------------------------------------ */
+/* ------------------------------------------ */
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_levinson_durbin() {
+        let r = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5];
+        let order = 5;
+
+        let (a, e) = levinson2(&[], order, &r);
+        let (expected_a, expected_e) = levinson(&[], order, &r);
+
+        let epsilon = 1e-4;
+
+        for (computed, expected) in a.iter().zip(expected_a.iter()) {
+            assert!((computed - expected).abs() < epsilon, "Coefficient mismatch: got {}, expected {}", computed, expected);
+        }
+
+        assert!((e - expected_e).abs() < epsilon, "Error mismatch: got {}, expected {}", e, expected_e);
+    }
+}
