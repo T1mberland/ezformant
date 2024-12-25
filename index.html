@@ -9,5 +9,21 @@
     <h1>Audio Spectrum Analyzer</h1>
     <canvas id="spectrum" width="800" height="400" style="border:1px solid black;"></canvas>
     <script type="module" src="app.js"></script>
+    <div>
+      <input type="checkbox" id="showSpectrum" checked />
+      <label for="showSpectrum">Show spectrum</label>
+    </div>
+    <div>
+      <input type="checkbox" id="showLPCGraph" checked />
+      <label for="showLPCGraph">Show LPC spectrum</label>
+    </div>
+    <div>
+      <input type="checkbox" id="showFormants" checked />
+      <label for="showFormants">Show Formants</label>
+    </div>
+    <br />
+    <label id="label-f1">F1: </label> <br />
+    <label id="label-f2">F2: </label> <br />
+    <label id="label-f3">F3: </label> <br />
 </body>
 </html>
