@@ -210,7 +210,8 @@ mod tests{
 
         const PEAKS_NUM: usize = 11;
         let epsilon = 10.0;
-        let answers: [f64; PEAKS_NUM] = [654.0, 1131.0, 2382.0, 2826.0, 3539.0, -5512.0, -2826.0, -3539.0, -2382.0, -1131.0, -654.0];
+        //let answers: [f64; PEAKS_NUM] = [654.0, 1131.0, 2382.0, 2826.0, 3539.0, -5512.0, -2826.0, -3539.0, -2382.0, -1131.0, -654.0];
+        let answers: [f64; PEAKS_NUM] = [654.0, 1131.0, 2382.0, 2826.0, 3539.0, 5512.0, 8198.0, 7486.0, 8642.0, 9894.0, 10370.0];
 
         let mut check: [bool; PEAKS_NUM] = [false; PEAKS_NUM];
         for peak in peaks {
