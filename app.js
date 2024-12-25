@@ -1,6 +1,9 @@
 import init from './pkg/ezformant.js'; // Import only if needed in the main thread
 import { process_audio, lpc_filter_freq_response, lpc_filter_freq_response_with_downsampling } from './pkg/ezformant.js';
 
+const label_f1 = document.getElementById('label-f1');
+const label_f2 = document.getElementById('label-f2');
+const label_f3 = document.getElementById('label-f3');
 const canvas = document.getElementById('spectrum');
 const ctx = canvas.getContext('2d');
 
@@ -270,6 +273,8 @@ async function start() {
       //   ctx.moveTo(xPos, 0);
       //   ctx.lineTo(xPos, canvas.height);
       // ctx.stroke();
+
+      //label_f1.content = "sss";
     }
 
     // Set up the interval to calculate formants using the worker
