@@ -53,7 +53,7 @@ async function start() {
     function drawSpectrum() {
       analyser.getFloatTimeDomainData(dataArray);
 
-      const spectrumData = process_audio(Array.from(dataArray), 0); // Ensure process_audio returns bufferLength data
+      const spectrumData = process_audio(Array.from(dataArray)); // Ensure process_audio returns bufferLength data
       spectrum.set(spectrumData.slice(0, bufferLength)); // Use only unique bins
 
       // Clear the canvas
