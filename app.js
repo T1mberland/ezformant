@@ -3,6 +3,9 @@ import { process_audio, lpc_filter_freq_response, lpc_filter_freq_response_with_
 
 const canvas = document.getElementById('spectrum');
 const ctx = canvas.getContext('2d');
+const labelF1 = document.getElementById('label-f1');
+const labelF2 = document.getElementById('label-f2');
+const labelF3 = document.getElementById('label-f3');
 
 let formant1 = 0.0;
 let formant2 = 0.0;
@@ -126,10 +129,16 @@ async function start() {
         ctx.stroke();
       }
 
-      // Optionally, draw frequency labels
+      updateFormantText();
       drawFrequencyLabels();
 
       requestAnimationFrame(drawSpectrum);
+    }
+
+    function updateFormantText() {
+      labelF1.innerHTML = 'F1: ' + formant1.toFixed(0);
+      labelF2.innerHTML = 'F2: ' + formant2.toFixed(0);
+      labelF3.innerHTML = 'F3: ' + formant3.toFixed(0);
     }
 
     function drawFrequencyLabels() {
