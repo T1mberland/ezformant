@@ -9,6 +9,10 @@ let formant2 = 0.0;
 let formant3 = 0.0;
 let formant4 = 0.0;
 
+let showFFTSpectrum =  document.getElementById('showFFTSpectrum');
+let showLPCSpectrum =  document.getElementById('showLPCSpectrum');
+let showFormants =  document.getElementById('showFormants');
+
 // Initialize the Web Worker as an ES Module
 const formantWorker = new Worker('formantWorker.mjs', { type: 'module' });
 
@@ -79,44 +83,48 @@ async function start() {
 
     function drawSpectrum() {
       analyser.getFloatTimeDomainData(dataArray);
-
-      const spectrumData = process_audio(Array.from(dataArray)); // Ensure process_audio returns bufferLength data
-      spectrum.set(spectrumData.slice(0, bufferLength)); // Use only unique bins
-
       // Clear the canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Begin drawing the spectrum
       ctx.fillStyle = '#000'; // Background color
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      ctx.strokeStyle = '#00ff00'; // Spectrum line color
-      ctx.lineWidth = 2;
-      ctx.beginPath();
+      if (showFFTSpectrum.checked) {
 
-      // Dynamically calculate maximum magnitude for normalization
-      const maxMagnitude = Math.max(...spectrum.map(Math.abs), 10);
+        const spectrumData = process_audio(Array.from(dataArray)); // Ensure process_audio returns bufferLength data
+        spectrum.set(spectrumData.slice(0, bufferLength)); // Use only unique bins
 
-      // Iterate through the unique spectrum data
-      for (let i = 0; i < bufferLength; i++) {
-        const freq = getFrequency(i);
-        if (freq < minFrequency || freq > maxFrequency) continue;
+        // Begin drawing the spectrum
+        ctx.fillStyle = '#000'; // Background color
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        const x = frequencyToPosition(freq);
-        const magnitude = spectrum[i];
+        ctx.strokeStyle = '#00ff00'; // Spectrum line color
+        ctx.lineWidth = 2;
+        ctx.beginPath();
 
-        const logMagnitude = Math.log10(Math.abs(magnitude) + 1); // Add 1 to avoid log10(0)
-        const logMaxMagnitude = Math.log10(maxMagnitude + 1);
-        const y = canvas.height - (logMagnitude / logMaxMagnitude) * canvas.height;
+        // Dynamically calculate maximum magnitude for normalization
+        const maxMagnitude = Math.max(...spectrum.map(Math.abs), 10);
 
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
+        // Iterate through the unique spectrum data
+        for (let i = 0; i < bufferLength; i++) {
+          const freq = getFrequency(i);
+          if (freq < minFrequency || freq > maxFrequency) continue;
+
+          const x = frequencyToPosition(freq);
+          const magnitude = spectrum[i];
+
+          const logMagnitude = Math.log10(Math.abs(magnitude) + 1); // Add 1 to avoid log10(0)
+          const logMaxMagnitude = Math.log10(maxMagnitude + 1);
+          const y = canvas.height - (logMagnitude / logMaxMagnitude) * canvas.height;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
         }
-      }
 
-      ctx.stroke();
+        ctx.stroke();
+      }
 
       // Optionally, draw frequency labels
       drawFrequencyLabels();
@@ -146,78 +154,83 @@ async function start() {
     }
 
     function drawLPCFilter() {
-      analyser.getFloatTimeDomainData(dataArray);
+      if (showLPCSpectrum.checked) {
+        analyser.getFloatTimeDomainData(dataArray);
 
-      const graphSize = 1024;
-      
-      // Instead of calling WASM functions directly, we need to offload this to the worker
-      // Remove or comment out the following lines:
-      // const freqResponce = lpc_filter_freq_response_with_downsampling(Array.from(dataArray), 16, sampleRate, downsampleFactor, graphSize);
-      // 
-      // Instead, you can request the worker to compute the frequency response if needed.
+        const graphSize = 1024;
+        
+        // Instead of calling WASM functions directly, we need to offload this to the worker
+        // Remove or comment out the following lines:
+        // const freqResponce = lpc_filter_freq_response_with_downsampling(Array.from(dataArray), 16, sampleRate, downsampleFactor, graphSize);
+        // 
+        // Instead, you can request the worker to compute the frequency response if needed.
 
-      // For now, let's keep the existing code and focus on moving calcFormants to the worker
-      // If you also want to move lpc_filter_freq_response_with_downsampling, you can follow similar steps
+        // For now, let's keep the existing code and focus on moving calcFormants to the worker
+        // If you also want to move lpc_filter_freq_response_with_downsampling, you can follow similar steps
 
-      // Proceeding with existing implementation
+        // Proceeding with existing implementation
 
-      const freqResponce = lpc_filter_freq_response_with_downsampling(Array.from(dataArray), 16, sampleRate, downsampleFactor, graphSize);
+        const freqResponce = lpc_filter_freq_response_with_downsampling(Array.from(dataArray), 16, sampleRate, downsampleFactor, graphSize);
 
-      if (freqResponce.every(value => value === 0)) {
-        requestAnimationFrame(drawLPCFilter);
-        return;
-      }
-
-      // Normalize the frequency response
-      const maxResponse = Math.max(...freqResponce);
-      const normalizeConst = maxResponse > 0 ? maxResponse : 1;
-
-      ctx.strokeStyle = "red";
-      ctx.beginPath();
-      let started = false;
-
-      for (let i = 0; i < graphSize; ++i) {
-        const freq = i * maxFrequency / graphSize / downsampleFactor;
-        if (freq < minFrequency) continue;
-
-        const xPos = frequencyToPosition(freq);
-
-        const logResponse = Math.log10(freqResponce[i] + 1); // Add 1 to avoid log10(0)
-        const logMaxResponse = Math.log10(normalizeConst + 1);
-        const yPos = canvas.height - (logResponse / logMaxResponse) * canvas.height;
-
-        if (!started) {
-          ctx.moveTo(xPos, yPos);
-          started = true;
-        } else {
-          ctx.lineTo(xPos, yPos);
+        if (freqResponce.every(value => value === 0)) {
+          requestAnimationFrame(drawLPCFilter);
+          return;
         }
+
+        // Normalize the frequency response
+        const maxResponse = Math.max(...freqResponce);
+        const normalizeConst = maxResponse > 0 ? maxResponse : 1;
+
+        ctx.strokeStyle = "red";
+        ctx.beginPath();
+        let started = false;
+
+        for (let i = 0; i < graphSize; ++i) {
+          const freq = i * maxFrequency / graphSize / downsampleFactor;
+          if (freq < minFrequency) continue;
+
+          const xPos = frequencyToPosition(freq);
+
+          const logResponse = Math.log10(freqResponce[i] + 1); // Add 1 to avoid log10(0)
+          const logMaxResponse = Math.log10(normalizeConst + 1);
+          const yPos = canvas.height - (logResponse / logMaxResponse) * canvas.height;
+
+          if (!started) {
+            ctx.moveTo(xPos, yPos);
+            started = true;
+          } else {
+            ctx.lineTo(xPos, yPos);
+          }
+        }
+
+        ctx.stroke();
       }
-      ctx.stroke();
 
-      // Draw the 1st formant
-      ctx.strokeStyle = "white";
-      ctx.beginPath();
-        let xPos = frequencyToPosition(formant1);
-        ctx.moveTo(xPos, 0);
-        ctx.lineTo(xPos, canvas.height);
-      ctx.stroke();
+      if (showFormants.checked) {
+        // Draw the 1st formant
+        ctx.strokeStyle = "white";
+        ctx.beginPath();
+          let xPos = frequencyToPosition(formant1);
+          ctx.moveTo(xPos, 0);
+          ctx.lineTo(xPos, canvas.height);
+        ctx.stroke();
 
-      // Draw the 2nd formant
-      ctx.strokeStyle = "red";
-      ctx.beginPath();
-        xPos = frequencyToPosition(formant2);
-        ctx.moveTo(xPos, 0);
-        ctx.lineTo(xPos, canvas.height);
-      ctx.stroke();
+        // Draw the 2nd formant
+        ctx.strokeStyle = "red";
+        ctx.beginPath();
+          xPos = frequencyToPosition(formant2);
+          ctx.moveTo(xPos, 0);
+          ctx.lineTo(xPos, canvas.height);
+        ctx.stroke();
 
-      // Draw the 3rd formant
-      ctx.strokeStyle = "green";
-      ctx.beginPath();
-        xPos = frequencyToPosition(formant3);
-        ctx.moveTo(xPos, 0);
-        ctx.lineTo(xPos, canvas.height);
-      ctx.stroke();
+        // Draw the 3rd formant
+        ctx.strokeStyle = "green";
+        ctx.beginPath();
+          xPos = frequencyToPosition(formant3);
+          ctx.moveTo(xPos, 0);
+          ctx.lineTo(xPos, canvas.height);
+        ctx.stroke();
+      }
 
       requestAnimationFrame(drawLPCFilter);
     }
