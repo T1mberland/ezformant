@@ -11,7 +11,6 @@ let formant1 = 0.0;
 let formant2 = 0.0;
 let formant3 = 0.0;
 let formant4 = 0.0;
-let freqResponse = []; // To store LPC filter frequency response
 
 let showFFTSpectrum =  document.getElementById('showFFTSpectrum');
 let showLPCSpectrum =  document.getElementById('showLPCSpectrum');
@@ -22,7 +21,7 @@ const formantWorker = new Worker('formantWorker.mjs', { type: 'module' });
 
 // Handle messages from the worker
 formantWorker.onmessage = function(e) {
-  const { type, status, formants, freqResponse: workerFreqResponse, error } = e.data;
+  const { type, status, formants, error } = e.data;
 
   if (type === 'init') {
     if (status === 'success') {
@@ -37,13 +36,6 @@ formantWorker.onmessage = function(e) {
       [formant1, formant2, formant3, formant4] = formants;
     } else {
       console.error('Formant detection failed:', error);
-    }
-  }
-  else if (type === 'calcLPCFilter') {
-    if (status === 'success') {
-      freqResponse = workerFreqResponse;
-    } else {
-      console.error('LPC Filter calculation failed:', error);
     }
   }
 };
@@ -73,8 +65,6 @@ async function start() {
     const spectrum = new Float32Array(bufferLength);
     const sampleRate = audioContext.sampleRate;
     const downsampleFactor = 4;
-
-    const graphSize = 1024; // Define graph size for LPC filter frequency response
 
     // Precompute logarithmic frequency boundaries
     const minFrequency = 20; // Minimum frequency to display
@@ -255,17 +245,11 @@ async function start() {
 
       }
 
-      // Optionally, draw the 4th formant if needed
-      // ctx.strokeStyle = "blue";
-      // ctx.beginPath();
-      //   xPos = frequencyToPosition(formant4);
-      //   ctx.moveTo(xPos, 0);
-      //   ctx.lineTo(xPos, canvas.height);
-      // ctx.stroke();
+      requestAnimationFrame(drawLPCFilter);
     }
 
     // Set up the interval to calculate formants using the worker
-    setInterval(calcFormants, 500); // Run `calcFormants` every 500 milliseconds
+    setInterval(calcFormants, 100); // Run `calcFormants` every 500 milliseconds
 
     function calcFormants() {
       // Send data to the worker for processing
@@ -283,63 +267,8 @@ async function start() {
     // Initialize the worker by sending an 'init' message
     formantWorker.postMessage({ type: 'init' });
 
-    // Modify drawLPCFilter to request frequency response from worker
-    function triggerDrawLPCFilter() {
-      analyser.getFloatTimeDomainData(dataArray);
-
-      // Send data to the worker for LPC filter frequency response calculation
-      formantWorker.postMessage({
-        type: 'calcLPCFilter',
-        data: {
-          audioData: Array.from(dataArray), // Transfer as an array
-          lpcOrder: 16, // Example LPC order, adjust as needed
-          sampleRate: sampleRate,
-          downsampleFactor: downsampleFactor,
-          graphSize: graphSize
-        }
-      });
-
-      // The actual drawing will be performed when the worker responds
-    }
-
-    // Update the drawLPCFilter function to request data and perform drawing
-    function drawLPCFilterWrapper() {
-      triggerDrawLPCFilter();
-      requestAnimationFrame(drawLPCFilterWrapper);
-    }
-
-    // Listen for worker messages to perform LPC filter drawing
-    formantWorker.onmessage = function(e) {
-      const { type, status, formants, freqResponse: workerFreqResponse, error } = e.data;
-
-      if (type === 'init') {
-        if (status === 'success') {
-          console.log('Worker initialized successfully.');
-        } else {
-          console.error('Worker initialization failed:', error);
-          alert('Failed to initialize formant detection worker.');
-        }
-      }
-      else if (type === 'calcFormants') {
-        if (status === 'success') {
-          [formant1, formant2, formant3, formant4] = formants;
-        } else {
-          console.error('Formant detection failed:', error);
-        }
-      }
-      else if (type === 'calcLPCFilter') {
-        if (status === 'success') {
-          freqResponse = workerFreqResponse;
-          performDrawLPCFilter(); // Perform drawing with the received data
-        } else {
-          console.error('LPC Filter calculation failed:', error);
-        }
-      }
-    };
-
-    // Start the drawing loops
     drawSpectrum();
-    drawLPCFilterWrapper();
+    drawLPCFilter();
   } catch (error) {
     console.error('Error accessing audio stream:', error);
     alert('Could not access the microphone. Please check your permissions.');
