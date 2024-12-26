@@ -19,6 +19,9 @@ let showFormants =  document.getElementById('showFormants');
 // Initialize the Web Worker as an ES Module
 const formantWorker = new Worker('formantWorker.mjs', { type: 'module' });
 
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight/2;
+
 // Handle messages from the worker
 formantWorker.onmessage = function(e) {
   const { type, status, formants, error } = e.data;
