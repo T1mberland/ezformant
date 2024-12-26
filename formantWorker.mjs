@@ -1,6 +1,5 @@
 import init, { 
-  formant_detection_with_downsampling,
-  lpc_filter_freq_response_with_downsampling
+  formant_detection_with_downsampling 
 } from './pkg/ezformant.js';
 
 let wasmInitialized = false;
@@ -53,36 +52,6 @@ self.onmessage = async function(e) {
       self.postMessage({ type: 'calcFormants', status: 'success', formants });
     } catch (error) {
       self.postMessage({ type: 'calcFormants', status: 'error', error: error.message });
-    }
-  }
-  else if (type === 'calcLPCFilter') {
-    // Ensure WASM is initialized
-    if (!wasmInitialized) {
-      try {
-        await initWasm();
-      } catch (error) {
-        self.postMessage({ type: 'calcLPCFilter', status: 'error', error: error.message });
-        return;
-      }
-    }
-
-    // Destructure the incoming data
-    const { audioData, lpcOrder, sampleRate, downsampleFactor, graphSize } = data;
-
-    try {
-      // Perform LPC filter frequency response calculation
-      const freqResponse = lpc_filter_freq_response_with_downsampling(
-        audioData,
-        lpcOrder,
-        sampleRate,
-        downsampleFactor,
-        graphSize
-      );
-
-      // Post the result back to the main thread
-      self.postMessage({ type: 'calcLPCFilter', status: 'success', freqResponse });
-    } catch (error) {
-      self.postMessage({ type: 'calcLPCFilter', status: 'error', error: error.message });
     }
   }
 };
