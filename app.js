@@ -223,6 +223,7 @@ async function start() {
           ctx.moveTo(xPos, 0);
           ctx.lineTo(xPos, canvas.height);
         ctx.stroke();
+        ctx.fillText(formant1.toFixed(0), xPos, 0);
 
         // Draw the 2nd formant
         ctx.strokeStyle = "red";
@@ -231,6 +232,7 @@ async function start() {
           ctx.moveTo(xPos, 0);
           ctx.lineTo(xPos, canvas.height);
         ctx.stroke();
+        ctx.fillText(formant2.toFixed(0), xPos, 0);
 
         // Draw the 3rd formant
         ctx.strokeStyle = "green";
@@ -239,6 +241,8 @@ async function start() {
           ctx.moveTo(xPos, 0);
           ctx.lineTo(xPos, canvas.height);
         ctx.stroke();
+        ctx.fillText(formant3.toFixed(0), xPos, 0);
+
       }
 
       requestAnimationFrame(drawLPCFilter);
