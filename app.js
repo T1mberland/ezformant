@@ -74,6 +74,84 @@ formantWorker.onmessage = function (e) {
   }
 };
 
+function drawAxisTicks(
+  hctx,
+  {
+    minTime, // earliest time in the window (ms)
+    now, // current time (ms)
+    timeWindow, // e.g. 5000 ms for a 5 second window
+    minFreq, // e.g. 0 Hz
+    maxFreq, // e.g. 5000 Hz
+    xFromTime, // function that maps time to x-position
+    yFromFreq, // function that maps frequency to y-position
+    width, // canvas width in px
+    height, // canvas height in px
+  },
+) {
+  // Decide how many grid lines or ticks you’d like for time/frequency
+  const numTimeTicks = 5;
+  const numFreqTicks = 5;
+
+  // Optional styling
+  hctx.save();
+  hctx.strokeStyle = "#444"; // Grid lines
+  hctx.fillStyle = "#fff"; // Text color
+  hctx.font = "12px sans-serif";
+
+  // 1) TIME AXIS TICKS (vertical lines)
+  //
+  // We'll create 'numTimeTicks + 1' equally spaced lines across the time range.
+  // 'minTime' is the left boundary of our time window, 'now' is the right boundary.
+
+  for (let i = 0; i <= numTimeTicks; i++) {
+    // The fraction along the time window for this tick
+    const fraction = i / numTimeTicks;
+    // The time in ms for this tick
+    const tickTime = minTime + fraction * timeWindow;
+    // Convert that to an x-position on the canvas
+    const xPos = xFromTime(tickTime);
+
+    // Draw the vertical line (from top to bottom of the canvas)
+    hctx.beginPath();
+    hctx.moveTo(xPos, 0);
+    hctx.lineTo(xPos, height);
+    hctx.stroke();
+
+    // Create a label showing how many seconds from the start of the window
+    // If you’d rather show absolute time, you can do (tickTime / 1000).toFixed(1).
+    const elapsedSeconds = ((tickTime - minTime) / 1000).toFixed(1);
+    const label = elapsedSeconds + "s";
+    // Place the text near the bottom of the canvas
+    hctx.fillText(label, xPos + 2, height - 5);
+  }
+
+  // 2) FREQUENCY AXIS TICKS (horizontal lines)
+  //
+  // We'll create 'numFreqTicks + 1' equally spaced lines from minFreq to maxFreq.
+
+  for (let i = 0; i <= numFreqTicks; i++) {
+    // The fraction along the frequency range
+    const fraction = i / numFreqTicks;
+    // The frequency in Hz for this tick
+    const freq = minFreq + fraction * (maxFreq - minFreq);
+    // Convert to y-position
+    const yPos = yFromFreq(freq);
+
+    // Draw the horizontal line (across the entire canvas width)
+    hctx.beginPath();
+    hctx.moveTo(0, yPos);
+    hctx.lineTo(width, yPos);
+    hctx.stroke();
+
+    // Label the frequency
+    const freqLabel = freq.toFixed(0) + " Hz";
+    // Place it slightly to the left (or right) of the line
+    hctx.fillText(freqLabel, 5, yPos - 5);
+  }
+
+  hctx.restore();
+}
+
 async function start() {
   try {
     // Initialize WASM in the main thread if necessary
@@ -308,7 +386,6 @@ async function start() {
     formantWorker.postMessage({ type: "init" });
 
     function drawFormantHistory() {
-      // Get the drawing context for the historyCanvas
       const historyCanvas = document.getElementById("historyCanvas");
       const hctx = historyCanvas.getContext("2d");
 
@@ -319,40 +396,54 @@ async function start() {
 
       // Time range to display
       const now = performance.now();
-      const timeWindow = 5000; // 5 seconds
+      const timeWindow = 5000; // 5 seconds of data
       const minTime = now - timeWindow;
 
-      // We find the min and max frequency we want to plot (e.g., 0 to 5000 Hz)
+      // Frequency range
       const minFreq = 0;
       const maxFreq = 5000;
 
-      // Filter our history to only keep recent data
+      // For convenience:
+      const width = historyCanvas.width;
+      const height = historyCanvas.height;
+
+      // Map functions
+      function xFromTime(t) {
+        // t goes from [minTime, now]
+        const fraction = (t - minTime) / timeWindow;
+        return fraction * width;
+      }
+      function yFromFreq(f) {
+        // [minFreq, maxFreq] mapped to [bottom, top]
+        const fraction = (f - minFreq) / (maxFreq - minFreq);
+        return height - fraction * height;
+      }
+
+      // Draw the axis ticks first (grid lines, etc.)
+      drawAxisTicks(hctx, {
+        minTime,
+        now,
+        timeWindow,
+        minFreq,
+        maxFreq,
+        xFromTime,
+        yFromFreq,
+        width,
+        height,
+      });
+
+      // Next, filter data to only keep the last 5 seconds
       const recentData = formantHistory.filter((d) => d.time >= minTime);
       if (recentData.length < 2) {
         requestAnimationFrame(drawFormantHistory);
         return;
       }
 
-      // We'll map time --> x-position and freq --> y-position
-      const xRange = historyCanvas.width;
-      const yRange = historyCanvas.height;
-
-      function xFromTime(t) {
-        // Map [minTime, now] -> [0, xRange]
-        return ((t - minTime) / timeWindow) * xRange;
-      }
-      function yFromFreq(f) {
-        // We want a higher frequency to appear higher on the canvas
-        // Typically computer graphics y=0 is top, so invert.
-        return yRange - ((f - minFreq) / (maxFreq - minFreq)) * yRange;
-      }
-
-      // We'll draw each formant as its own color
-      // You can do the lines by connecting consecutive points in the array
-      drawSingleFormantLine(recentData, "f1", "#ff0000"); // Red
-      drawSingleFormantLine(recentData, "f2", "#00ff00"); // Green
-      drawSingleFormantLine(recentData, "f3", "#0000ff"); // Blue
-      // If you want a 4th formant, add it similarly
+      // Draw each formant line
+      drawSingleFormantLine(recentData, "f1", "#ff0000");
+      drawSingleFormantLine(recentData, "f2", "#00ff00");
+      drawSingleFormantLine(recentData, "f3", "#0000ff");
+      // If you have a 4th formant, add it as well
 
       function drawSingleFormantLine(data, formantKey, color) {
         hctx.strokeStyle = color;
@@ -369,12 +460,6 @@ async function start() {
         hctx.stroke();
       }
 
-      // Draw axis ticks or labels as you wish:
-      // hctx.fillStyle = '#fff';
-      // hctx.fillText('Time (s)', ...);
-      // hctx.fillText('Frequency (Hz)', ...);
-
-      // Animate
       requestAnimationFrame(drawFormantHistory);
     }
 
