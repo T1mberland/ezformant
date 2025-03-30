@@ -11,6 +11,35 @@ const labelF1 = document.getElementById("label-f1");
 const labelF2 = document.getElementById("label-f2");
 const labelF3 = document.getElementById("label-f3");
 
+const stream = await navigator.mediaDevices.getUserMedia({
+  audio: {
+    autoGainControl: false,
+    noiseSuppression: false,
+    echoCancellation: false,
+  },
+});
+const audioContext = new AudioContext();
+await audioContext.resume(); // Ensure AudioContext is running
+const source = audioContext.createMediaStreamSource(stream);
+const analyser = audioContext.createAnalyser();
+source.connect(analyser);
+
+const fftSize = 2048;
+analyser.fftSize = fftSize;
+const bufferLength = fftSize / 2;
+const dataArray = new Float32Array(fftSize);
+const spectrum = new Float32Array(bufferLength);
+const sampleRate = audioContext.sampleRate;
+const downsampleFactor = 4;
+
+// Precompute logarithmic frequency boundaries
+const minFrequency = 20; // Minimum frequency to display
+const maxFrequency = sampleRate / 2; // Nyquist frequency
+
+const logMin = Math.log10(minFrequency);
+const logMax = Math.log10(maxFrequency);
+const logRange = logMax - logMin;
+
 const MAX_HISTORY = 1000;
 let formantHistory = [];
 
@@ -51,12 +80,26 @@ function addFormantsToHistory(f1, f2, f3, f4) {
   }
 }
 
+function calcFormants() {
+  // Send data to the worker for processing
+  formantWorker.postMessage({
+    type: "calcFormants",
+    data: {
+      audioData: Array.from(dataArray), // Transfer as an array
+      lpcOrder: 14, // Example LPC order, adjust as needed
+      sampleRate: sampleRate,
+      downsampleFactor: downsampleFactor,
+    },
+  });
+}
+
 // Handle messages from the worker
 formantWorker.onmessage = function (e) {
   const { type, status, formants, error } = e.data;
 
   if (type === "init") {
     if (status === "success") {
+      setInterval(calcFormants, 100);
       console.log("Worker initialized successfully.");
     } else {
       console.error("Worker initialization failed:", error);
@@ -157,35 +200,6 @@ async function start() {
     // Initialize WASM in the main thread if necessary
     await init();
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        autoGainControl: false,
-        noiseSuppression: false,
-        echoCancellation: false,
-      },
-    });
-    const audioContext = new AudioContext();
-    await audioContext.resume(); // Ensure AudioContext is running
-    const source = audioContext.createMediaStreamSource(stream);
-    const analyser = audioContext.createAnalyser();
-    source.connect(analyser);
-
-    const fftSize = 2048;
-    analyser.fftSize = fftSize;
-    const bufferLength = fftSize / 2;
-    const dataArray = new Float32Array(fftSize);
-    const spectrum = new Float32Array(bufferLength);
-    const sampleRate = audioContext.sampleRate;
-    const downsampleFactor = 4;
-
-    // Precompute logarithmic frequency boundaries
-    const minFrequency = 20; // Minimum frequency to display
-    const maxFrequency = sampleRate / 2; // Nyquist frequency
-
-    const logMin = Math.log10(minFrequency);
-    const logMax = Math.log10(maxFrequency);
-    const logRange = logMax - logMin;
-
     // Function to get frequency for a given bin index
     function getFrequency(index) {
       // Modified this line ONLY to align data with labels:
@@ -279,18 +293,6 @@ async function start() {
         analyser.getFloatTimeDomainData(dataArray);
 
         const graphSize = 1024;
-
-        // Instead of calling WASM functions directly, we need to offload this to the worker
-        // Remove or comment out the following lines:
-        // const freqResponce = lpc_filter_freq_response_with_downsampling(Array.from(dataArray), 16, sampleRate, downsampleFactor, graphSize);
-        //
-        // Instead, you can request the worker to compute the frequency response if needed.
-
-        // For now, let's keep the existing code and focus on moving calcFormants to the worker
-        // If you also want to move lpc_filter_freq_response_with_downsampling, you can follow similar steps
-
-        // Proceeding with existing implementation
-
         const freqResponce = lpc_filter_freq_response_with_downsampling(
           Array.from(dataArray),
           16,
@@ -366,22 +368,6 @@ async function start() {
       requestAnimationFrame(drawLPCFilter);
     }
 
-    // Set up the interval to calculate formants using the worker
-    setInterval(calcFormants, 100); // Run `calcFormants` every 500 milliseconds
-
-    function calcFormants() {
-      // Send data to the worker for processing
-      formantWorker.postMessage({
-        type: "calcFormants",
-        data: {
-          audioData: Array.from(dataArray), // Transfer as an array
-          lpcOrder: 14, // Example LPC order, adjust as needed
-          sampleRate: sampleRate,
-          downsampleFactor: downsampleFactor,
-        },
-      });
-    }
-
     // Initialize the worker by sending an 'init' message
     formantWorker.postMessage({ type: "init" });
 
@@ -439,11 +425,9 @@ async function start() {
         return;
       }
 
-      // Draw each formant line
       drawSingleFormantLine(recentData, "f1", "#ff0000");
       drawSingleFormantLine(recentData, "f2", "#00ff00");
       drawSingleFormantLine(recentData, "f3", "#0000ff");
-      // If you have a 4th formant, add it as well
 
       function drawSingleFormantLine(data, formantKey, color) {
         hctx.strokeStyle = color;
