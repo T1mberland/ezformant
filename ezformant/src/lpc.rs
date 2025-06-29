@@ -1,12 +1,5 @@
 use aberth::AberthSolver;
 use rustfft::num_complex::{Complex, ComplexFloat};
-use wasm_bindgen::prelude::*;
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-}
 
 /// Applies a pre-emphasis filter to a signal in-place.
 ///
