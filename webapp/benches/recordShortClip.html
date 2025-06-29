@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Capture Full FFT Data</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Capture Full FFT Data</h1>
+  <button id="capture">Capture Frame</button>
+  <a id="download" href="#" download="audio_frame.json" style="display: none;">Download Full Data</a>
+  <pre id="output"></pre>
+
+  <script>
+    let stream;
+    let audioContext;
+    let analyser;
+    let dataArray;
+
+    const captureButton = document.getElementById('capture');
+    const downloadLink = document.getElementById('download');
+    const output = document.getElementById('output');
+
+    async function initializeAudio() {
+      // Request access to the microphone with specific constraints
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          autoGainControl: false,
+          noiseSuppression: false,
+          echoCancellation: false,
+        },
+      });
+
+      // Create an AudioContext and an AnalyserNode
+      audioContext = new AudioContext();
+      analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+
+      // Connect the audio stream to the analyser
+      source.connect(analyser);
+
+      // Configure the analyser
+      analyser.fftSize = 2048; // Ensure full array size matches FFT size
+      dataArray = new Float32Array(analyser.fftSize); // Array to store full FFT size data
+    }
+
+    async function captureAudioFrame() {
+      try {
+        // If not initialized, initialize the audio context and analyser
+        if (!stream || !audioContext || !analyser) {
+          await initializeAudio();
+        }
+
+        // Wait for the microphone to provide data
+        setTimeout(() => {
+          analyser.getFloatTimeDomainData(dataArray);
+
+          // Display the captured data (truncate display to avoid overload)
+          output.textContent = JSON.stringify(dataArray.slice(0, 256), null, 2); // Show the first 256 samples
+          downloadLink.style.display = 'block';
+
+          // Prepare the full data for download
+          const blob = new Blob([JSON.stringify(dataArray)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          downloadLink.href = url;
+        }, 500); // Delay to allow audio data to populate
+      } catch (error) {
+        console.error('Error capturing audio:', error);
+        alert('Could not capture audio. Please check microphone permissions.');
+      }
+    }
+
+    captureButton.addEventListener('click', captureAudioFrame);
+
+    window.addEventListener('beforeunload', () => {
+      // Clean up the microphone stream when leaving the page
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,10 +1,11 @@
+use ezformant::*;
 use rustfft::{
     num_complex::{Complex, ComplexFloat},
     FftPlanner,
 };
 use wasm_bindgen::prelude::*;
 
-mod lpc;
+// mod lpc;
 
 #[wasm_bindgen]
 pub fn process_audio(data: Vec<f32>) -> Vec<f32> {
