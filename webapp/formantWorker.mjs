@@ -1,6 +1,4 @@
-import init, { 
-  formant_detection_with_downsampling 
-} from './pkg/ezformant.js';
+import init, { formant_detection_with_downsampling } from "./pkg/webapp.js";
 
 let wasmInitialized = false;
 
@@ -13,25 +11,28 @@ async function initWasm() {
 }
 
 // Listen for messages from the main thread
-self.onmessage = async function(e) {
+self.onmessage = async function (e) {
   const { type, data } = e.data;
 
-  if (type === 'init') {
+  if (type === "init") {
     // Initialize the WebAssembly module
     try {
       await initWasm();
-      self.postMessage({ type: 'init', status: 'success' });
+      self.postMessage({ type: "init", status: "success" });
     } catch (error) {
-      self.postMessage({ type: 'init', status: 'error', error: error.message });
+      self.postMessage({ type: "init", status: "error", error: error.message });
     }
-  }
-  else if (type === 'calcFormants') {
+  } else if (type === "calcFormants") {
     // Ensure WASM is initialized
     if (!wasmInitialized) {
       try {
         await initWasm();
       } catch (error) {
-        self.postMessage({ type: 'calcFormants', status: 'error', error: error.message });
+        self.postMessage({
+          type: "calcFormants",
+          status: "error",
+          error: error.message,
+        });
         return;
       }
     }
@@ -45,13 +46,17 @@ self.onmessage = async function(e) {
         audioData,
         lpcOrder,
         sampleRate,
-        downsampleFactor
+        downsampleFactor,
       );
 
       // Post the result back to the main thread
-      self.postMessage({ type: 'calcFormants', status: 'success', formants });
+      self.postMessage({ type: "calcFormants", status: "success", formants });
     } catch (error) {
-      self.postMessage({ type: 'calcFormants', status: 'error', error: error.message });
+      self.postMessage({
+        type: "calcFormants",
+        status: "error",
+        error: error.message,
+      });
     }
   }
 };

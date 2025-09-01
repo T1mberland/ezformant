@@ -1,9 +1,9 @@
-import init from "./pkg/ezformant.js"; // Import only if needed in the main thread
+import init from "./pkg/webapp.js"; // Import only if needed in the main thread
 import {
   process_audio,
   lpc_filter_freq_response,
   lpc_filter_freq_response_with_downsampling,
-} from "./pkg/ezformant.js";
+} from "./pkg/webapp.js";
 
 const canvas = document.getElementById("spectrum");
 const ctx = canvas.getContext("2d");
