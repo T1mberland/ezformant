@@ -15,10 +15,16 @@ use rustfft::num_complex::{Complex, ComplexFloat};
 /// pre_emphasis(&mut samples, 0.95);
 /// ```
 pub fn pre_emphasis(signal: &mut [f64], alpha: f64) {
-    for i in (1..signal.len()).rev() {
-        signal[i] -= alpha * signal[i - 1];
+    if signal.is_empty() {
+        return;
     }
-    signal[0] *= 1.0 - alpha;
+    let mut prev = signal[0];
+    signal[0] = (1.0 - alpha) * prev;
+    for n in 1..signal.len() {
+        let x = signal[n];
+        signal[n] = x - alpha * prev;
+        prev = x;
+    }
 }
 
 /// Computes the autocorrelation of a signal up to a specified lag.
@@ -64,30 +70,51 @@ pub fn autocorrelate(signal: &[f64], maxlag: usize) -> Vec<f64> {
 /// - A vector of filter coefficients `[a0, a1, ..., a_order]` (with `a0 = 1.0`).
 /// - The final prediction error (`E`).
 pub fn levinson(order: usize, r: &[f64]) -> (Vec<f64>, f64) {
+    assert!(r.len() >= order + 1, "r too short");
     let mut a = vec![0.0; order + 1];
     a[0] = 1.0;
 
-    let mut e = r[0];
+    let mut e = if r[0].abs() < 1e-12 { 1e-12 } else { r[0] };
 
     for i in 1..=order {
-        // Compute the reflection coefficient lambda
-        let mut lambda = 0.0;
-        for j in 0..i {
-            lambda += a[j] * r[i - j];
+        let mut acc = r[i];
+        for j in 1..i {
+            acc += a[j] * r[i - j];
         }
-        lambda = -lambda / e;
+        let k = -acc / e;
 
-        // Update the coefficients a[0..=i]
-        for j in 0..=(i / 2) {
-            let temp = a[j] + lambda * a[i - j];
-            a[i - j] += lambda * a[j];
-            a[j] = temp;
+        let mut a_new = a.clone();
+        for j in 1..i {
+            a_new[j] = a[j] + k * a[i - j];
         }
+        a_new[i] = k;
+        a = a_new;
 
-        // Update the prediction error
-        e *= 1.0 - lambda * lambda;
+        e *= 1.0 - k * k;
+        if e < 1e-12 {
+            e = 1e-12;
+        }
     }
+    (a, e)
+}
 
+/// Implements the Levinson-Durbin recursion algorithm iteratively.
+/// Returns LPS coefficients in the reverse order
+///
+/// # Arguments
+///
+/// * `order`  - The order of the recursion (filter).
+/// * `r`      - A slice of f64 representing the autocorrelation coefficients.
+///              Must have length >= `order + 1`.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - A vector of filter coefficients `[a0, a1, ..., a_order]` (with `a_order = 1.0`).
+/// - The final prediction error (`E`).
+pub fn levinson_reversed(order: usize, r: &[f64]) -> (Vec<f64>, f64) {
+    let (mut a, e) = levinson(order, r);
+    a.reverse();
     (a, e)
 }
 
@@ -141,15 +168,25 @@ pub fn peak_detection(lpc_coeffs: &[f64], sample_rate: f64) -> Vec<f64> {
     const EPSILON: f64 = 0.001;
     const MAX_ITERATIONS: u32 = 15;
 
+    let mut poly = lpc_coeffs.to_vec();
+    poly.reverse();
+
     let mut solver = AberthSolver::new();
     solver.epsilon = EPSILON;
     solver.max_iterations = MAX_ITERATIONS;
 
-    let roots = solver.find_roots(lpc_coeffs).to_vec();
+    let roots = solver.find_roots(&poly).to_vec();
     let mut peaks = Vec::with_capacity(roots.len());
 
     for root in roots {
         let theta = root.arg();
+
+        // |z|>1.0+ε は非安定 pole
+        // Im z >= 0 で共役解の重複を排除
+        if root.norm() > 1.0 + 1e-9 || root.im() < 0.0 {
+            continue;
+        }
+
         // Convert angle to a frequency in Hz
         if theta >= 0.0 {
             peaks.push(theta * sample_rate / (2.0 * std::f64::consts::PI));
@@ -177,7 +214,6 @@ pub fn formant_detection(lpc_coeffs: &[f64], sample_rate: f64) -> Vec<f64> {
     let mut peaks = peak_detection(lpc_coeffs, sample_rate);
     let mut formants = Vec::with_capacity(peaks.len());
 
-    // Filter out frequencies near 0 Hz or beyond Nyquist
     let low_cutoff = 10.0;
     let high_cutoff = (sample_rate / 2.0) - 10.0;
 
@@ -187,24 +223,6 @@ pub fn formant_detection(lpc_coeffs: &[f64], sample_rate: f64) -> Vec<f64> {
         }
     }
 
-    formants.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+    formants.sort_by(|a, b| a.partial_cmp(b).unwrap());
     formants
 }
-
-/* ------------------------------------------ */
-/* ------------------- Tests ---------------- */
-/* ------------------------------------------ */
-// Uncomment to enable unit tests
-/*
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pre_emphasis() {
-        let mut samples = vec![1.0, 2.0, 3.0, 4.0];
-        pre_emphasis(&mut samples, 0.95);
-        // Write your assertions here
-    }
-}
-*/
