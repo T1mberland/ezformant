@@ -4,6 +4,7 @@ use rustfft::{
 };
 
 pub mod lpc;
+pub mod pitch;
 
 pub fn process_audio(data: Vec<f32>) -> Vec<f32> {
     let len = data.len();
