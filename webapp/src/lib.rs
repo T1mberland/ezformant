@@ -149,6 +149,10 @@ pub fn formant_detection_with_downsampling(
     lpc::formant_detection(&lpc_coeff, sample_rate)
 }
 
+pub fn pitch_detection(signal: &[f64], sampling_rate: f64) -> f64 {
+    return pitch::pitch_detection_yin(signal, sampling_rate);
+}
+
 // ------------------
 // Tests
 // ------------------
