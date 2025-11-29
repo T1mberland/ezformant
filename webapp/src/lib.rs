@@ -18,6 +18,11 @@ extern "C" {
 // ------------------
 
 #[wasm_bindgen]
+pub fn wasm_fourier(data: Vec<f32>) -> Vec<f32> {
+    fourier_trans(data)
+}
+
+#[wasm_bindgen]
 pub fn lpc_filter_freq_response_with_downsampling(
     original_data: Vec<f64>,
     lpc_order: usize,
@@ -149,6 +154,7 @@ pub fn formant_detection_with_downsampling(
     lpc::formant_detection(&lpc_coeff, sample_rate)
 }
 
+#[wasm_bindgen]
 pub fn pitch_detection(signal: &[f64], sampling_rate: f64) -> f64 {
     return pitch::pitch_detection_yin(signal, sampling_rate);
 }
