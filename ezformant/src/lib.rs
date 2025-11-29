@@ -4,8 +4,9 @@ use rustfft::{
 };
 
 pub mod lpc;
+pub mod pitch;
 
-pub fn process_audio(data: Vec<f32>) -> Vec<f32> {
+pub fn fourier_trans(data: Vec<f32>) -> Vec<f32> {
     let len = data.len();
     let mut fft_input: Vec<Complex<f32>> = data.iter().map(|&x| Complex::new(x, 0.0)).collect();
 

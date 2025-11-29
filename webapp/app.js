@@ -1,12 +1,13 @@
 import init from "./pkg/webapp.js"; // Import only if needed in the main thread
 import {
-  process_audio,
+  wasm_fourier,
   lpc_filter_freq_response,
   lpc_filter_freq_response_with_downsampling,
 } from "./pkg/webapp.js";
 
 const canvas = document.getElementById("spectrum");
 const ctx = canvas.getContext("2d");
+const labelF0 = document.getElementById("label-f0");
 const labelF1 = document.getElementById("label-f1");
 const labelF2 = document.getElementById("label-f2");
 const labelF3 = document.getElementById("label-f3");
@@ -43,6 +44,7 @@ const logRange = logMax - logMin;
 const MAX_HISTORY = 1000;
 let formantHistory = [];
 
+let formant0 = 0.0; // pitch
 let formant1 = 0.0;
 let formant2 = 0.0;
 let formant3 = 0.0;
@@ -69,10 +71,10 @@ document.getElementById("showHistoryTabBtn").onclick = function () {
   console.log("test");
 };
 
-function addFormantsToHistory(f1, f2, f3, f4) {
+function addFormantsToHistory(f0, f1, f2, f3, f4) {
   const timestamp = performance.now();
   // or you can store time in seconds relative to start
-  formantHistory.push({ time: timestamp, f1, f2, f3, f4 });
+  formantHistory.push({ time: timestamp, f0, f1, f2, f3, f4 });
 
   // Keep buffer from growing indefinitely
   if (formantHistory.length > MAX_HISTORY) {
@@ -95,7 +97,7 @@ function calcFormants() {
 
 // Handle messages from the worker
 formantWorker.onmessage = function (e) {
-  const { type, status, formants, error } = e.data;
+  const { type, status, formants, pitch, error } = e.data;
 
   if (type === "init") {
     if (status === "success") {
@@ -108,9 +110,10 @@ formantWorker.onmessage = function (e) {
   } else if (type === "calcFormants") {
     if (status === "success") {
       [formant1, formant2, formant3, formant4] = formants;
+      formant0 = pitch;
 
       // Store these formants in our rolling history
-      addFormantsToHistory(formant1, formant2, formant3, formant4);
+      addFormantsToHistory(formant0, formant1, formant2, formant3, formant4);
     } else {
       console.error("Formant detection failed:", error);
     }
@@ -218,7 +221,7 @@ async function start() {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       if (showFFTSpectrum.checked) {
-        const spectrumData = process_audio(Array.from(dataArray)); // Ensure process_audio returns bufferLength data
+        const spectrumData = wasm_fourier(Array.from(dataArray));
         spectrum.set(spectrumData.slice(0, bufferLength)); // Use only unique bins
 
         // Begin drawing the spectrum
@@ -262,6 +265,7 @@ async function start() {
     }
 
     function updateFormantText() {
+      labelF0.innerHTML = "F0: " + formant0.toFixed(0);
       labelF1.innerHTML = "F1: " + formant1.toFixed(0);
       labelF2.innerHTML = "F2: " + formant2.toFixed(0);
       labelF3.innerHTML = "F3: " + formant3.toFixed(0);
@@ -337,10 +341,19 @@ async function start() {
       }
 
       if (showFormants.checked) {
+        // Draw the pitch
+        ctx.strokeStyle = "#ff00ff";
+        ctx.beginPath();
+        let xPos = frequencyToPosition(formant0);
+        ctx.moveTo(xPos, 0);
+        ctx.lineTo(xPos, canvas.height);
+        ctx.stroke();
+        ctx.fillText(formant0.toFixed(0), xPos, 0);
+
         // Draw the 1st formant
         ctx.strokeStyle = "white";
         ctx.beginPath();
-        let xPos = frequencyToPosition(formant1);
+        xPos = frequencyToPosition(formant1);
         ctx.moveTo(xPos, 0);
         ctx.lineTo(xPos, canvas.height);
         ctx.stroke();
@@ -425,6 +438,7 @@ async function start() {
         return;
       }
 
+      drawSingleFormantLine(recentData, "f0", "#ff00ff");
       drawSingleFormantLine(recentData, "f1", "#ff0000");
       drawSingleFormantLine(recentData, "f2", "#00ff00");
       drawSingleFormantLine(recentData, "f3", "#0000ff");

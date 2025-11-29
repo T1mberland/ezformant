@@ -1,29 +1,5 @@
 use ezformant::*;
-use rustfft::{
-    num_complex::{Complex, ComplexFloat},
-    FftPlanner,
-};
 use wasm_bindgen::prelude::*;
-
-// mod lpc;
-
-#[wasm_bindgen]
-pub fn process_audio(data: Vec<f32>) -> Vec<f32> {
-    let len = data.len();
-    let mut fft_input: Vec<Complex<f32>> = data.iter().map(|&x| Complex::new(x, 0.0)).collect();
-
-    let mut planner = FftPlanner::<f32>::new();
-    let fft = planner.plan_fft_forward(len);
-
-    fft.process(&mut fft_input);
-
-    let half_len = len / 2;
-    fft_input
-        .iter()
-        .take(half_len)
-        .map(|x| x.abs() + 1e-10)
-        .collect()
-}
 
 #[wasm_bindgen]
 extern "C" {
@@ -38,54 +14,13 @@ extern "C" {
 }
 
 // ------------------
-// Helper Functions
-// ------------------
-
-/// Downsample the input signal by the given factor.
-fn downsample(input: &[f64], factor: usize) -> Vec<f64> {
-    input.iter().step_by(factor).copied().collect()
-}
-
-/// Subtract the mean from the input data (in-place).
-fn subtract_mean_in_place(data: &mut [f64]) {
-    let mean = data.iter().copied().sum::<f64>() / data.len() as f64;
-    for sample in data.iter_mut() {
-        *sample -= mean;
-    }
-}
-
-/// Apply a Hamming window to the input data (in-place).
-fn apply_hamming_window_in_place(data: &mut [f64]) {
-    let n = data.len() as f64;
-    // Avoid degeneracy (e.g., 0-length array).
-    if data.is_empty() {
-        return;
-    }
-    for (i, sample) in data.iter_mut().enumerate() {
-        let ratio = i as f64 / (n - 1.0);
-        *sample *= 0.54 - 0.46 * (2.0 * std::f64::consts::PI * ratio).cos();
-    }
-}
-
-/// Apply pre-emphasis filter to the input data (in-place).
-/// `alpha` is the pre-emphasis coefficient (commonly around 0.95–0.97).
-fn pre_emphasize_in_place(data: &mut [f64], alpha: f64) {
-    lpc::pre_emphasis(data, alpha);
-}
-
-/// Preprocess signal by:
-/// 1) subtracting the mean,
-/// 2) applying a Hamming window,
-/// 3) applying pre-emphasis.
-fn preprocess_signal(data: &mut [f64], alpha: f64) {
-    subtract_mean_in_place(data);
-    apply_hamming_window_in_place(data);
-    pre_emphasize_in_place(data, alpha);
-}
-
-// ------------------
 // Public API
 // ------------------
+
+#[wasm_bindgen]
+pub fn wasm_fourier(data: Vec<f32>) -> Vec<f32> {
+    fourier_trans(data)
+}
 
 #[wasm_bindgen]
 pub fn lpc_filter_freq_response_with_downsampling(
@@ -217,6 +152,11 @@ pub fn formant_detection_with_downsampling(
 
     // Detect formants
     lpc::formant_detection(&lpc_coeff, sample_rate)
+}
+
+#[wasm_bindgen]
+pub fn pitch_detection(signal: &[f64], sampling_rate: f64) -> f64 {
+    return pitch::pitch_detection_yin(signal, sampling_rate);
 }
 
 // ------------------

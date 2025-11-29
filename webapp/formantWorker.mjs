@@ -1,4 +1,4 @@
-import init, { formant_detection_with_downsampling } from "./pkg/webapp.js";
+import init, { formant_detection_with_downsampling, pitch_detection } from "./pkg/webapp.js";
 
 let wasmInitialized = false;
 
@@ -48,9 +48,10 @@ self.onmessage = async function (e) {
         sampleRate,
         downsampleFactor,
       );
+      const pitch = pitch_detection(audioData, sampleRate);
 
       // Post the result back to the main thread
-      self.postMessage({ type: "calcFormants", status: "success", formants });
+      self.postMessage({ type: "calcFormants", status: "success", formants, pitch });
     } catch (error) {
       self.postMessage({
         type: "calcFormants",
