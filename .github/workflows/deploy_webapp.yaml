@@ -45,7 +45,7 @@ jobs:
           wasm-pack build \
             --target web \
             --release \
-            --out-dir ../web/pkg
+            --out-dir ./pkg
 
       - name: Upload artifact for GitHub Pages
         uses: actions/upload-pages-artifact@v3
