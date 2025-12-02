@@ -39,7 +39,6 @@ jobs:
         run: cargo install wasm-pack
 
       - name: Build WASM with wasm-pack
-        # crate の場所にあわせて変更してね（例: ./crate）
         working-directory: ./webapp
         run: |
           wasm-pack build \
@@ -47,10 +46,25 @@ jobs:
             --release \
             --out-dir ./pkg
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: ./webapp/package-lock.json
+
+      - name: Install JS dependencies
+        working-directory: ./webapp
+        run: npm ci
+
+      - name: Build TypeScript web app
+        working-directory: ./webapp
+        run: npm run build
+
       - name: Upload artifact for GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./webapp
+          path: ./webapp/dist
 
   deploy:
     runs-on: ubuntu-latest
