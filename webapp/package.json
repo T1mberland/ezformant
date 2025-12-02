@@ -1,18 +1,21 @@
 {
-  "name": "webapp",
-  "version": "1.0.0",
-  "description": "Simple formant extraction algorithm using LPC written in Rust.",
-  "type": "module",
-  "scripts": {
-    "build": "node scripts/build.mjs",
-    "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist",
-    "serve": "node scripts/serve.mjs"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "devDependencies": {
-    "typescript": "^5.9.3"
-  }
+	"name": "webapp",
+	"version": "1.0.0",
+	"description": "Simple formant extraction algorithm using LPC written in Rust.",
+	"type": "module",
+	"scripts": {
+		"build": "node scripts/build.mjs",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist",
+		"serve": "node scripts/serve.mjs",
+		"lint": "biome lint .",
+		"format": "biome format --write ."
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"devDependencies": {
+		"@biomejs/biome": "^2.3.8",
+		"typescript": "^5.9.3"
+	}
 }

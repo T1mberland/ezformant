@@ -87,7 +87,9 @@
     window.addEventListener('beforeunload', () => {
       // Clean up the microphone stream when leaving the page
       if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((track) => {
+          track.stop();
+        });
       }
     });
   </script>
