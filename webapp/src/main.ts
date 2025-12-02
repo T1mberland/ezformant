@@ -68,6 +68,21 @@ let formant2 = 0;
 let formant3 = 0;
 let formant4 = 0;
 
+const NOTE_NAMES = [
+	"C",
+	"C#",
+	"D",
+	"D#",
+	"E",
+	"F",
+	"F#",
+	"G",
+	"G#",
+	"A",
+	"A#",
+	"B",
+];
+
 function requireElement<T extends HTMLElement>(id: string): T {
 	const el = document.getElementById(id);
 	if (!el) {
@@ -82,6 +97,17 @@ function get2DContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
 		throw new Error("Failed to get 2D canvas context");
 	}
 	return context;
+}
+
+function frequencyToNoteName(freq: number): string {
+	if (!Number.isFinite(freq) || freq <= 0) {
+		return "—";
+	}
+
+	const midi = Math.round(69 + 12 * Math.log2(freq / 440));
+	const name = NOTE_NAMES[((midi % 12) + 12) % 12];
+	const octave = Math.floor(midi / 12) - 1;
+	return `${name}${octave}`;
 }
 
 function addFormantsToHistory(
@@ -254,7 +280,7 @@ async function start() {
 		};
 
 		const updateFormantText = () => {
-			labelF0.textContent = `F0: ${formant0.toFixed(0)}`;
+			labelF0.textContent = `F0: ${formant0.toFixed(0)} Hz (${frequencyToNoteName(formant0)})`;
 			labelF1.textContent = `F1: ${formant1.toFixed(0)}`;
 			labelF2.textContent = `F2: ${formant2.toFixed(0)}`;
 			labelF3.textContent = `F3: ${formant3.toFixed(0)}`;
@@ -375,7 +401,11 @@ async function start() {
 			}
 
 			if (showFormants.checked) {
-				const drawFormantLine = (value: number, color: string) => {
+				const drawFormantLine = (
+					value: number,
+					color: string,
+					label?: string,
+				) => {
 					const xPos = frequencyToPosition(value);
 					ctx.strokeStyle = color;
 					ctx.beginPath();
@@ -383,10 +413,14 @@ async function start() {
 					ctx.lineTo(xPos, spectrumCanvas.height);
 					ctx.stroke();
 					ctx.fillStyle = color;
-					ctx.fillText(value.toFixed(0), xPos, 0);
+					ctx.fillText(label ?? value.toFixed(0), xPos, 0);
 				};
 
-				drawFormantLine(formant0, "#ff00ff");
+				drawFormantLine(
+					formant0,
+					"#ff00ff",
+					`${formant0.toFixed(0)} (${frequencyToNoteName(formant0)})`,
+				);
 				drawFormantLine(formant1, "white");
 				drawFormantLine(formant2, "red");
 				drawFormantLine(formant3, "green");
