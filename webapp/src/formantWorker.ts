@@ -1,7 +1,7 @@
 import init, {
 	formant_detection_with_downsampling,
 	pitch_detection,
-} from "../pkg/webapp.js";
+} from "./pkg/webapp.js";
 
 type InitMessage = { type: "init" };
 type CalcMessage = {

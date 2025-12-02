@@ -1,7 +1,7 @@
 import init, {
 	lpc_filter_freq_response_with_downsampling,
 	wasm_fourier,
-} from "../pkg/webapp.js";
+} from "./pkg/webapp.js";
 
 type WorkerRequest =
 	| { type: "init" }
