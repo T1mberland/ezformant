@@ -1,5 +1,12 @@
 import { execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,5 +32,14 @@ cpSync(path.join(projectRoot, "index.html"), path.join(distDir, "index.html"));
 cpSync(path.join(projectRoot, "pkg"), path.join(distDir, "pkg"), {
 	recursive: true,
 });
+
+// Ensure compiled JS points to pkg inside dist (wasm-pack output is copied above)
+for (const file of ["main.js", "formantWorker.js"]) {
+	const filePath = path.join(distDir, file);
+	if (!existsSync(filePath)) continue;
+	const content = readFileSync(filePath, "utf8");
+	const updated = content.replace(/\.\.\/pkg\//g, "./pkg/");
+	writeFileSync(filePath, updated, "utf8");
+}
 
 console.log("Build complete. Output available in dist/");

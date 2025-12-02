@@ -366,7 +366,7 @@ async function start() {
 					graphSize,
 				);
 
-				if (freqResponse.every((value) => value === 0)) {
+				if (freqResponse.every((value: number) => value === 0)) {
 					requestAnimationFrame(drawLPCFilter);
 					return;
 				}
