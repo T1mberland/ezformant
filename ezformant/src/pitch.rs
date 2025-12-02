@@ -1,6 +1,3 @@
-use aberth::AberthSolver;
-use rustfft::num_complex::{Complex, ComplexFloat};
-
 pub fn difference_function(signal: &[f64], t: usize) -> f64 {
     let mut acc = 0.0;
     for i in 0..signal.len() {
