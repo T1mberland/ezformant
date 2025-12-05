@@ -348,6 +348,12 @@ body {
 	font-weight: 600;
 }
 
+.frozen-badge {
+	background: rgba(184, 32, 32, 0.06);
+	color: #b82020;
+	border-color: rgba(184, 32, 32, 0.24);
+}
+
 .controls {
 	display: flex;
 	flex-wrap: wrap;

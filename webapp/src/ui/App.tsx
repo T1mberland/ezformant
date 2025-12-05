@@ -145,6 +145,7 @@ export default function App() {
 	const [manualPitchHz, setManualPitchHz] = useState<number>(220);
 	const [manualVowelF1, setManualVowelF1] = useState<number>(500);
 	const [manualVowelF2, setManualVowelF2] = useState<number>(1500);
+	const [isFrozen, setIsFrozen] = useState(false);
 
 	const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const historyCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -159,6 +160,7 @@ export default function App() {
 	const showFFTSpectrumRef = useRef(showFFTSpectrum);
 	const showLPCSpectrumRef = useRef(showLPCSpectrum);
 	const showFormantsRef = useRef(showFormants);
+	const isFrozenRef = useRef(isFrozen);
 	const pitchTargetRef = useRef<number | null>(null);
 	const vowelTargetRef = useRef<{ f1: number | null; f2: number | null }>({
 		f1: null,
@@ -177,6 +179,9 @@ export default function App() {
 	useEffect(() => {
 		formantsRef.current = formants;
 	}, [formants]);
+	useEffect(() => {
+		isFrozenRef.current = isFrozen;
+	}, [isFrozen]);
 	useEffect(() => {
 		let pitchTarget: number | null = null;
 		if (trainingMode === "pitch") {
@@ -255,7 +260,7 @@ export default function App() {
 			const scaleX = spectrumCanvas.width / rect.width;
 			const scaleY = spectrumCanvas.height / rect.height;
 			const x = (event.clientX - rect.left) * scaleX;
-			const y = (event.clientY - rect.top) * scaleY;
+			const _y = (event.clientY - rect.top) * scaleY;
 
 			const { minFrequency, logRange } = freqBoundsRef.current;
 			const logMin = Math.log10(minFrequency);
@@ -283,9 +288,6 @@ export default function App() {
 				});
 			}
 
-			const yBandTop = spectrumCanvas.height - 80;
-			if (y < yBandTop) return;
-
 			const hitThreshold = 22;
 			let best: Candidate | null = null;
 			let bestDist = Number.POSITIVE_INFINITY;
@@ -298,7 +300,10 @@ export default function App() {
 				}
 			});
 
-			if (!best) return;
+			if (!best) {
+				setIsFrozen((previous) => !previous);
+				return;
+			}
 			draggingTarget = best.kind;
 			event.preventDefault();
 		};
@@ -436,7 +441,9 @@ export default function App() {
 					const ctx = spectrumCanvas.getContext("2d");
 					if (!ctx) return;
 
-					analyser.getFloatTimeDomainData(dataArray);
+					if (!isFrozenRef.current) {
+						analyser.getFloatTimeDomainData(dataArray);
+					}
 					ctx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
 					ctx.fillStyle = "#f7f3ec";
 					ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
@@ -525,7 +532,9 @@ export default function App() {
 						((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
 
 					if (showLPCSpectrumRef.current) {
-						analyser.getFloatTimeDomainData(dataArray);
+						if (!isFrozenRef.current) {
+							analyser.getFloatTimeDomainData(dataArray);
+						}
 						const graphSize = 1024;
 						const freqResponse =
 							wasm.lpc_filter_freq_response_with_downsampling(
@@ -688,7 +697,9 @@ export default function App() {
 
 					ctx.restore();
 
-					const recent = history.filter((entry) => entry.time >= minTime);
+					const recent = isFrozenRef.current
+						? history
+						: history.filter((entry) => entry.time >= minTime);
 					if (recent.length >= 2) {
 						const drawLine = (key: keyof FormantSample, color: string) => {
 							ctx.strokeStyle = color;
@@ -863,6 +874,7 @@ export default function App() {
 					</button>
 				</div>
 				<div className="toggles">
+					{isFrozen ? <span className="badge frozen-badge">Frozen</span> : null}
 					<label className="toggle">
 						<input
 							type="checkbox"
