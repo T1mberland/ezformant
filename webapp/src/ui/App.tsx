@@ -441,9 +441,12 @@ export default function App() {
 					const ctx = spectrumCanvas.getContext("2d");
 					if (!ctx) return;
 
-					if (!isFrozenRef.current) {
-						analyser.getFloatTimeDomainData(dataArray);
+					if (isFrozenRef.current) {
+						rafSpectrum = requestAnimationFrame(drawSpectrum);
+						return;
 					}
+
+					analyser.getFloatTimeDomainData(dataArray);
 					ctx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
 					ctx.fillStyle = "#f7f3ec";
 					ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
@@ -531,10 +534,13 @@ export default function App() {
 					const frequencyToPosition = (freq: number) =>
 						((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
 
+					if (isFrozenRef.current) {
+						rafLpc = requestAnimationFrame(drawLPCFilter);
+						return;
+					}
+
 					if (showLPCSpectrumRef.current) {
-						if (!isFrozenRef.current) {
-							analyser.getFloatTimeDomainData(dataArray);
-						}
+						analyser.getFloatTimeDomainData(dataArray);
 						const graphSize = 1024;
 						const freqResponse =
 							wasm.lpc_filter_freq_response_with_downsampling(
@@ -643,6 +649,11 @@ export default function App() {
 					const ctx = canvas.getContext("2d");
 					if (!ctx) return;
 
+					if (isFrozenRef.current) {
+						rafHistory = requestAnimationFrame(drawFormantHistory);
+						return;
+					}
+
 					ctx.clearRect(0, 0, canvas.width, canvas.height);
 					ctx.fillStyle = "#f7f3ec";
 					ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -697,9 +708,7 @@ export default function App() {
 
 					ctx.restore();
 
-					const recent = isFrozenRef.current
-						? history
-						: history.filter((entry) => entry.time >= minTime);
+					const recent = history.filter((entry) => entry.time >= minTime);
 					if (recent.length >= 2) {
 						const drawLine = (key: keyof FormantSample, color: string) => {
 							ctx.strokeStyle = color;
