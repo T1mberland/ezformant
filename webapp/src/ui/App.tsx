@@ -68,7 +68,6 @@ export default function App() {
 	const [showFFTSpectrum, setShowFFTSpectrum] = useState(true);
 	const [showLPCSpectrum, setShowLPCSpectrum] = useState(true);
 	const [showFormants, setShowFormants] = useState(true);
-	const [refreshMs, setRefreshMs] = useState(100);
 	const [error, setError] = useState<string | null>(null);
 	const [formants, setFormants] = useState({
 		f0: 0,
@@ -191,7 +190,7 @@ export default function App() {
 					const message = event.data;
 					if (message.type === "init") {
 						if (message.status === "success") {
-							formantInterval = window.setInterval(calcFormants, refreshMs);
+							formantInterval = window.setInterval(calcFormants, 100);
 						} else {
 							setError("Failed to initialize formant worker");
 						}
@@ -499,7 +498,7 @@ export default function App() {
 			if (audioContext) audioContext.close();
 			window.removeEventListener("resize", resize);
 		};
-	}, [refreshMs]);
+	}, []);
 
 	return (
 		<div className="page">
@@ -560,19 +559,6 @@ export default function App() {
 							onChange={(e) => setShowFormants(e.target.checked)}
 						/>
 						<span>Formant markers</span>
-					</label>
-					<label className="toggle">
-						<span>Refresh</span>
-						<select
-							value={refreshMs}
-							onChange={(e) => setRefreshMs(Number(e.target.value))}
-						>
-							<option value={50}>50 ms</option>
-							<option value={75}>75 ms</option>
-							<option value={100}>100 ms</option>
-							<option value={150}>150 ms</option>
-							<option value={200}>200 ms</option>
-						</select>
 					</label>
 				</div>
 			</section>
