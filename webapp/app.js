@@ -68,6 +68,7 @@ document.getElementById("showSpectrumTabBtn").onclick = function () {
 document.getElementById("showHistoryTabBtn").onclick = function () {
   document.getElementById("spectrum").style.display = "none";
   document.getElementById("historyCanvas").style.display = "block";
+  console.log("test");
 };
 
 function addFormantsToHistory(f0, f1, f2, f3, f4) {
@@ -164,7 +165,7 @@ function drawAxisTicks(
 
     // Create a label showing how many seconds from the start of the window
     // If you’d rather show absolute time, you can do (tickTime / 1000).toFixed(1).
-    const elapsedSeconds = (-(timeWindow - (tickTime - minTime)) / 1000).toFixed(1);
+    const elapsedSeconds = ((tickTime - minTime) / 1000).toFixed(1);
     const label = elapsedSeconds + "s";
     // Place the text near the bottom of the canvas
     hctx.fillText(label, xPos + 2, height - 5);
@@ -399,7 +400,7 @@ async function start() {
 
       // Frequency range
       const minFreq = 0;
-      const maxFreq = 3000;
+      const maxFreq = 5000;
 
       // For convenience:
       const width = historyCanvas.width;
