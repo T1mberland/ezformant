@@ -308,6 +308,11 @@ export default function App() {
 			event.preventDefault();
 		};
 
+		const handleHistoryPointerDown = (event: PointerEvent) => {
+			event.preventDefault();
+			setIsFrozen((previous) => !previous);
+		};
+
 		const handlePointerMove = (event: PointerEvent) => {
 			if (!draggingTarget) return;
 			const rect = spectrumCanvas.getBoundingClientRect();
@@ -344,6 +349,7 @@ export default function App() {
 		};
 
 		spectrumCanvas.addEventListener("pointerdown", handlePointerDown);
+		historyCanvas.addEventListener("pointerdown", handleHistoryPointerDown);
 		window.addEventListener("pointermove", handlePointerMove);
 		window.addEventListener("pointerup", handlePointerUp);
 
@@ -385,6 +391,7 @@ export default function App() {
 				});
 
 				const calcFormants = () => {
+					if (isFrozenRef.current) return;
 					if (!analyser || !dataArray || !audioContext || !worker) return;
 					analyser.getFloatTimeDomainData(dataArray);
 					const payload: WorkerRequest = {
@@ -416,6 +423,9 @@ export default function App() {
 						message.formants &&
 						message.pitch !== undefined
 					) {
+						if (isFrozenRef.current) {
+							return;
+						}
 						const [f1, f2, f3, f4] = message.formants;
 						setFormants({ f0: message.pitch, f1, f2, f3, f4 });
 						addFormantsToHistory({
@@ -747,6 +757,7 @@ export default function App() {
 
 		return () => {
 			spectrumCanvas.removeEventListener("pointerdown", handlePointerDown);
+			historyCanvas.removeEventListener("pointerdown", handleHistoryPointerDown);
 			window.removeEventListener("pointermove", handlePointerMove);
 			window.removeEventListener("pointerup", handlePointerUp);
 			if (rafSpectrum) cancelAnimationFrame(rafSpectrum);
