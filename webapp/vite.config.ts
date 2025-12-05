@@ -12,6 +12,11 @@ export default defineConfig({
 					src: "pkg/**/*",
 					dest: "pkg",
 				},
+				{
+					// Ensure wasm sits next to bundled JS chunks under assets/
+					src: "pkg/webapp_bg.wasm",
+					dest: "assets",
+				},
 			],
 		}),
 	],
