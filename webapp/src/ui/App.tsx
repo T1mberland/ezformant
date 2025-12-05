@@ -230,7 +230,7 @@ export default function App() {
 
 					analyser.getFloatTimeDomainData(dataArray);
 					ctx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
-					ctx.fillStyle = "#0c0f1a";
+					ctx.fillStyle = "#f7f3ec";
 					ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
 
 					const { minFrequency, maxFrequency, logRange } =
@@ -245,7 +245,7 @@ export default function App() {
 						const spectrumData = wasm.wasm_fourier(dataArray);
 						spectrum.set(spectrumData.slice(0, bufferLength));
 
-						ctx.strokeStyle = "#5ad6ff";
+						ctx.strokeStyle = "#f26b38";
 						ctx.lineWidth = 2;
 						ctx.beginPath();
 
@@ -278,8 +278,8 @@ export default function App() {
 					}
 
 					const labelCount = 16;
-					ctx.fillStyle = "#cdd3ff";
-					ctx.font = "12px 'Segoe UI', sans-serif";
+					ctx.fillStyle = "#5e5247";
+					ctx.font = "12px 'Soehne', 'Inter', sans-serif";
 					ctx.textAlign = "center";
 					ctx.textBaseline = "top";
 
@@ -291,7 +291,7 @@ export default function App() {
 						ctx.beginPath();
 						ctx.moveTo(x, spectrumCanvas.height);
 						ctx.lineTo(x, spectrumCanvas.height - 8);
-						ctx.strokeStyle = "#445";
+						ctx.strokeStyle = "#c7bcad";
 						ctx.lineWidth = 1;
 						ctx.stroke();
 						ctx.fillText(
@@ -331,7 +331,7 @@ export default function App() {
 						const maxResponse = Math.max(...freqResponse);
 						const normalizeConst = maxResponse > 0 ? maxResponse : 1;
 
-						ctx.strokeStyle = "#ff7b7b";
+						ctx.strokeStyle = "#2f6b4f";
 						ctx.beginPath();
 						let started = false;
 
@@ -376,12 +376,12 @@ export default function App() {
 						const current = formantsRef.current;
 						renderLine(
 							current.f0,
-							"#d67dff",
+							"#c24d2c",
 							`${current.f0.toFixed(0)} (${frequencyToNoteName(current.f0)})`,
 						);
-						renderLine(current.f1, "#ffffff", current.f1.toFixed(0));
-						renderLine(current.f2, "#ff7b7b", current.f2.toFixed(0));
-						renderLine(current.f3, "#6bff9d", current.f3.toFixed(0));
+						renderLine(current.f1, "#1f3f58", current.f1.toFixed(0));
+						renderLine(current.f2, "#d06c3e", current.f2.toFixed(0));
+						renderLine(current.f3, "#2f6b4f", current.f3.toFixed(0));
 					}
 
 					rafLpc = requestAnimationFrame(drawLPCFilter);
@@ -394,7 +394,7 @@ export default function App() {
 					if (!ctx) return;
 
 					ctx.clearRect(0, 0, canvas.width, canvas.height);
-					ctx.fillStyle = "#0c0f1a";
+					ctx.fillStyle = "#f7f3ec";
 					ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 					const now = performance.now();
@@ -416,9 +416,9 @@ export default function App() {
 					const numFreqTicks = 5;
 
 					ctx.save();
-					ctx.strokeStyle = "#24304d";
-					ctx.fillStyle = "#cdd3ff";
-					ctx.font = "12px 'Segoe UI', sans-serif";
+					ctx.strokeStyle = "#d7ccbe";
+					ctx.fillStyle = "#5e5247";
+					ctx.font = "12px 'Soehne', 'Inter', sans-serif";
 
 					for (let i = 0; i <= numTimeTicks; i += 1) {
 						const fraction = i / numTimeTicks;
@@ -464,10 +464,10 @@ export default function App() {
 							ctx.stroke();
 						};
 
-						drawLine("f0", "#d67dff");
-						drawLine("f1", "#ff7b7b");
-						drawLine("f2", "#6bff9d");
-						drawLine("f3", "#7ca7ff");
+						drawLine("f0", "#c24d2c");
+						drawLine("f1", "#1f3f58");
+						drawLine("f2", "#d06c3e");
+						drawLine("f3", "#2f6b4f");
 					}
 
 					rafHistory = requestAnimationFrame(drawFormantHistory);
