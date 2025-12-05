@@ -145,6 +145,7 @@ export default function App() {
 	const [manualPitchHz, setManualPitchHz] = useState<number>(220);
 	const [manualVowelF1, setManualVowelF1] = useState<number>(500);
 	const [manualVowelF2, setManualVowelF2] = useState<number>(1500);
+	const [isFrozen, setIsFrozen] = useState(false);
 
 	const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const historyCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -159,6 +160,7 @@ export default function App() {
 	const showFFTSpectrumRef = useRef(showFFTSpectrum);
 	const showLPCSpectrumRef = useRef(showLPCSpectrum);
 	const showFormantsRef = useRef(showFormants);
+	const isFrozenRef = useRef(isFrozen);
 	const pitchTargetRef = useRef<number | null>(null);
 	const vowelTargetRef = useRef<{ f1: number | null; f2: number | null }>({
 		f1: null,
@@ -177,6 +179,9 @@ export default function App() {
 	useEffect(() => {
 		formantsRef.current = formants;
 	}, [formants]);
+	useEffect(() => {
+		isFrozenRef.current = isFrozen;
+	}, [isFrozen]);
 	useEffect(() => {
 		let pitchTarget: number | null = null;
 		if (trainingMode === "pitch") {
@@ -255,7 +260,7 @@ export default function App() {
 			const scaleX = spectrumCanvas.width / rect.width;
 			const scaleY = spectrumCanvas.height / rect.height;
 			const x = (event.clientX - rect.left) * scaleX;
-			const y = (event.clientY - rect.top) * scaleY;
+			const _y = (event.clientY - rect.top) * scaleY;
 
 			const { minFrequency, logRange } = freqBoundsRef.current;
 			const logMin = Math.log10(minFrequency);
@@ -283,9 +288,6 @@ export default function App() {
 				});
 			}
 
-			const yBandTop = spectrumCanvas.height - 80;
-			if (y < yBandTop) return;
-
 			const hitThreshold = 22;
 			let best: Candidate | null = null;
 			let bestDist = Number.POSITIVE_INFINITY;
@@ -298,9 +300,21 @@ export default function App() {
 				}
 			});
 
-			if (!best) return;
+			if (!best) {
+				const nextFrozen = !isFrozenRef.current;
+				setIsFrozen(nextFrozen);
+				isFrozenRef.current = nextFrozen;
+				return;
+			}
 			draggingTarget = best.kind;
 			event.preventDefault();
+		};
+
+		const handleHistoryPointerDown = (event: PointerEvent) => {
+			event.preventDefault();
+			const nextFrozen = !isFrozenRef.current;
+			setIsFrozen(nextFrozen);
+			isFrozenRef.current = nextFrozen;
 		};
 
 		const handlePointerMove = (event: PointerEvent) => {
@@ -339,6 +353,7 @@ export default function App() {
 		};
 
 		spectrumCanvas.addEventListener("pointerdown", handlePointerDown);
+		historyCanvas.addEventListener("pointerdown", handleHistoryPointerDown);
 		window.addEventListener("pointermove", handlePointerMove);
 		window.addEventListener("pointerup", handlePointerUp);
 
@@ -380,6 +395,7 @@ export default function App() {
 				});
 
 				const calcFormants = () => {
+					if (isFrozenRef.current) return;
 					if (!analyser || !dataArray || !audioContext || !worker) return;
 					analyser.getFloatTimeDomainData(dataArray);
 					const payload: WorkerRequest = {
@@ -411,6 +427,9 @@ export default function App() {
 						message.formants &&
 						message.pitch !== undefined
 					) {
+						if (isFrozenRef.current) {
+							return;
+						}
 						const [f1, f2, f3, f4] = message.formants;
 						setFormants({ f0: message.pitch, f1, f2, f3, f4 });
 						addFormantsToHistory({
@@ -435,6 +454,11 @@ export default function App() {
 					if (!analyser || !dataArray || !spectrum || !wasm) return;
 					const ctx = spectrumCanvas.getContext("2d");
 					if (!ctx) return;
+
+					if (isFrozenRef.current) {
+						rafSpectrum = requestAnimationFrame(drawSpectrum);
+						return;
+					}
 
 					analyser.getFloatTimeDomainData(dataArray);
 					ctx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
@@ -523,6 +547,11 @@ export default function App() {
 
 					const frequencyToPosition = (freq: number) =>
 						((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
+
+					if (isFrozenRef.current) {
+						rafLpc = requestAnimationFrame(drawLPCFilter);
+						return;
+					}
 
 					if (showLPCSpectrumRef.current) {
 						analyser.getFloatTimeDomainData(dataArray);
@@ -634,6 +663,11 @@ export default function App() {
 					const ctx = canvas.getContext("2d");
 					if (!ctx) return;
 
+					if (isFrozenRef.current) {
+						rafHistory = requestAnimationFrame(drawFormantHistory);
+						return;
+					}
+
 					ctx.clearRect(0, 0, canvas.width, canvas.height);
 					ctx.fillStyle = "#f7f3ec";
 					ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -727,6 +761,7 @@ export default function App() {
 
 		return () => {
 			spectrumCanvas.removeEventListener("pointerdown", handlePointerDown);
+			historyCanvas.removeEventListener("pointerdown", handleHistoryPointerDown);
 			window.removeEventListener("pointermove", handlePointerMove);
 			window.removeEventListener("pointerup", handlePointerUp);
 			if (rafSpectrum) cancelAnimationFrame(rafSpectrum);
@@ -863,6 +898,7 @@ export default function App() {
 					</button>
 				</div>
 				<div className="toggles">
+					{isFrozen ? <span className="badge frozen-badge">Frozen</span> : null}
 					<label className="toggle">
 						<input
 							type="checkbox"
