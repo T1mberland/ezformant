@@ -572,8 +572,6 @@ export default function App() {
 							<option value={100}>100 ms</option>
 							<option value={150}>150 ms</option>
 							<option value={200}>200 ms</option>
-							<option value={300}>300 ms</option>
-							<option value={500}>500 ms</option>
 						</select>
 					</label>
 				</div>
