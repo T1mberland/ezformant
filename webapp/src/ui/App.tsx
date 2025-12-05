@@ -61,15 +61,6 @@ function frequencyToNoteName(freq: number): string {
 	return `${name}${octave}`;
 }
 
-function centsOff(freq: number): string {
-	if (!Number.isFinite(freq) || freq <= 0) return "±0¢";
-	const exactMidi = 69 + 12 * Math.log2(freq / 440);
-	const nearestMidi = Math.round(exactMidi);
-	const cents = Math.round((exactMidi - nearestMidi) * 100);
-	const sign = cents > 0 ? "+" : cents < 0 ? "−" : "±";
-	return `${sign}${Math.abs(cents)}¢`;
-}
-
 export default function App() {
 	const [activeView, setActiveView] = useState<"spectrum" | "history">(
 		"spectrum",
@@ -577,9 +568,7 @@ export default function App() {
 					<div className="label">Pitch (F0)</div>
 					<div className="value">
 						{formants.f0.toFixed(0)} Hz{" "}
-						<span className="note">
-							{frequencyToNoteName(formants.f0)} · {centsOff(formants.f0)}
-						</span>
+						<span className="note">{frequencyToNoteName(formants.f0)}</span>
 					</div>
 				</div>
 				<div className="metric">
