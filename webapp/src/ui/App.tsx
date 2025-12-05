@@ -33,6 +33,22 @@ type FormantSample = {
 	f4: number;
 };
 
+type TrainingMode = "off" | "pitch" | "vowel";
+
+type VowelTarget = {
+	id: string;
+	label: string;
+	example: string;
+	f1: number;
+	f2: number;
+};
+
+type PitchTarget = {
+	id: string;
+	label: string;
+	freq: number;
+};
+
 const FFT_SIZE = 2048;
 const MAX_HISTORY = 1000;
 const FORMANT_ORDER = 14;
@@ -51,6 +67,53 @@ const NOTE_NAMES = [
 	"A",
 	"A#",
 	"B",
+];
+
+const VOWEL_TARGETS: VowelTarget[] = [
+	{
+		id: "i",
+		label: "/i/",
+		example: "heed",
+		f1: 300,
+		f2: 2300,
+	},
+	{
+		id: "e",
+		label: "/e/",
+		example: "bed",
+		f1: 400,
+		f2: 2000,
+	},
+	{
+		id: "a",
+		label: "/a/",
+		example: "father",
+		f1: 700,
+		f2: 1100,
+	},
+	{
+		id: "o",
+		label: "/o/",
+		example: "thought",
+		f1: 500,
+		f2: 900,
+	},
+	{
+		id: "u",
+		label: "/u/",
+		example: "food",
+		f1: 350,
+		f2: 800,
+	},
+];
+
+const PITCH_TARGETS: PitchTarget[] = [
+	{ id: "G3", label: "G3 (196 Hz)", freq: 196 },
+	{ id: "A3", label: "A3 (220 Hz)", freq: 220 },
+	{ id: "C4", label: "C4 (261 Hz)", freq: 261.63 },
+	{ id: "E4", label: "E4 (329 Hz)", freq: 329.63 },
+	{ id: "G4", label: "G4 (392 Hz)", freq: 392 },
+	{ id: "A4", label: "A4 (440 Hz)", freq: 440 },
 ];
 
 function frequencyToNoteName(freq: number): string {
@@ -76,6 +139,12 @@ export default function App() {
 		f3: 0,
 		f4: 0,
 	});
+	const [trainingMode, setTrainingMode] = useState<TrainingMode>("off");
+	const [selectedVowelId, setSelectedVowelId] = useState<string>("i");
+	const [selectedPitchId, setSelectedPitchId] = useState<string>("A3");
+	const [manualPitchHz, setManualPitchHz] = useState<number>(220);
+	const [manualVowelF1, setManualVowelF1] = useState<number>(500);
+	const [manualVowelF2, setManualVowelF2] = useState<number>(1500);
 
 	const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const historyCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -500,6 +569,89 @@ export default function App() {
 		};
 	}, []);
 
+	const selectedPitch = PITCH_TARGETS.find(
+		(pitch) => pitch.id === selectedPitchId,
+	);
+	const selectedVowel = VOWEL_TARGETS.find(
+		(vowel) => vowel.id === selectedVowelId,
+	);
+
+	let pitchTargetFreq: number | null = null;
+	let pitchTargetLabel = "—";
+
+	if (trainingMode === "pitch") {
+		if (selectedPitchId === "custom") {
+			pitchTargetFreq = manualPitchHz;
+			pitchTargetLabel = `${Math.round(manualPitchHz)} Hz (custom)`;
+		} else if (selectedPitch) {
+			pitchTargetFreq = selectedPitch.freq;
+			pitchTargetLabel = selectedPitch.label;
+		}
+	}
+
+	let pitchDiffHz: number | null = null;
+	let pitchDeltaLabel = "—";
+	let pitchDirectionLabel = "";
+
+	if (trainingMode === "pitch" && pitchTargetFreq !== null && formants.f0 > 0) {
+		pitchDiffHz = formants.f0 - pitchTargetFreq;
+		const sign = pitchDiffHz > 0 ? "+" : "";
+		pitchDeltaLabel = `${sign}${Math.round(pitchDiffHz)} Hz`;
+		if (Math.abs(pitchDiffHz) < 5) {
+			pitchDirectionLabel = "on target";
+		} else if (pitchDiffHz > 0) {
+			pitchDirectionLabel = "above target";
+		} else {
+			pitchDirectionLabel = "below target";
+		}
+	}
+
+	let vowelSummary = "Choose a target vowel to practice.";
+	let vowelTargetF1: number | null = null;
+	let vowelTargetF2: number | null = null;
+	let vowelTargetDisplay = "—";
+
+	if (trainingMode === "vowel") {
+		if (selectedVowelId === "custom") {
+			vowelTargetF1 = manualVowelF1;
+			vowelTargetF2 = manualVowelF2;
+			vowelTargetDisplay = `${Math.round(
+				manualVowelF1,
+			)} Hz / ${Math.round(manualVowelF2)} Hz (custom)`;
+		} else if (selectedVowel) {
+			vowelTargetF1 = selectedVowel.f1;
+			vowelTargetF2 = selectedVowel.f2;
+			vowelTargetDisplay = `${selectedVowel.f1.toFixed(
+				0,
+			)} Hz / ${selectedVowel.f2.toFixed(0)} Hz`;
+		}
+	}
+
+	if (
+		trainingMode === "vowel" &&
+		vowelTargetF1 !== null &&
+		vowelTargetF2 !== null &&
+		formants.f1 > 0 &&
+		formants.f2 > 0
+	) {
+		const deltaF1 = formants.f1 - vowelTargetF1;
+		const deltaF2 = formants.f2 - vowelTargetF2;
+		const distance = Math.hypot(deltaF1, deltaF2);
+
+		let quality = "far from target";
+		if (distance < 150) {
+			quality = "very close";
+		} else if (distance < 350) {
+			quality = "in the ballpark";
+		}
+
+		const signF1 = deltaF1 > 0 ? "+" : "";
+
+		vowelSummary = `${quality} (ΔF1 ${signF1}${Math.round(
+			deltaF1,
+		)} Hz, ΔF2 ${deltaF2 > 0 ? "+" : ""}${Math.round(deltaF2)} Hz)`;
+	}
+
 	return (
 		<div className="page">
 			<header className="topbar">
@@ -586,6 +738,158 @@ export default function App() {
 				<div className="metric">
 					<div className="label">F4</div>
 					<div className="value">{formants.f4.toFixed(0)} Hz</div>
+				</div>
+			</section>
+
+			<section className="trainer">
+				<div className="metric trainer-card">
+					<div className="trainer-header">
+						<div className="label">Target trainer</div>
+						<div className="trainer-modes">
+							<button
+								type="button"
+								className={trainingMode === "off" ? "active" : ""}
+								onClick={() => setTrainingMode("off")}
+							>
+								Off
+							</button>
+							<button
+								type="button"
+								className={trainingMode === "pitch" ? "active" : ""}
+								onClick={() => setTrainingMode("pitch")}
+							>
+								Pitch
+							</button>
+							<button
+								type="button"
+								className={trainingMode === "vowel" ? "active" : ""}
+								onClick={() => setTrainingMode("vowel")}
+							>
+								Vowel
+							</button>
+						</div>
+					</div>
+
+					{trainingMode === "pitch" ? (
+						<div className="trainer-body">
+							<label className="trainer-field">
+								<span>Target note</span>
+								<select
+									value={selectedPitchId}
+									onChange={(event) => setSelectedPitchId(event.target.value)}
+								>
+									{PITCH_TARGETS.map((target) => (
+										<option key={target.id} value={target.id}>
+											{target.label}
+										</option>
+									))}
+									<option value="custom">Custom (Hz)</option>
+								</select>
+							</label>
+							{selectedPitchId === "custom" ? (
+								<label className="trainer-field">
+									<span>Custom F0</span>
+									<input
+										type="number"
+										min={40}
+										max={2000}
+										value={manualPitchHz}
+										onChange={(event) => {
+											const next = Number.parseFloat(event.target.value);
+											if (Number.isFinite(next)) {
+												setManualPitchHz(next);
+											}
+										}}
+									/>
+									<span>Hz</span>
+								</label>
+							) : null}
+							<div className="trainer-readout">
+								<span>Target {pitchTargetLabel}</span>
+								<span>Current {formants.f0.toFixed(0)} Hz</span>
+								<span>
+									Δ{" "}
+									{pitchDiffHz !== null
+										? `${pitchDeltaLabel} (${pitchDirectionLabel})`
+										: "—"}
+								</span>
+							</div>
+						</div>
+					) : null}
+
+					{trainingMode === "vowel" ? (
+						<div className="trainer-body">
+							<label className="trainer-field">
+								<span>Target vowel</span>
+								<select
+									value={selectedVowelId}
+									onChange={(event) => setSelectedVowelId(event.target.value)}
+								>
+									{VOWEL_TARGETS.map((target) => (
+										<option key={target.id} value={target.id}>
+											{target.label} – {target.example}
+										</option>
+									))}
+									<option value="custom">Custom F1/F2</option>
+								</select>
+							</label>
+							{selectedVowelId === "custom" ? (
+								<div className="trainer-body">
+									<label className="trainer-field">
+										<span>Custom F1</span>
+										<input
+											type="number"
+											min={100}
+											max={2000}
+											value={manualVowelF1}
+											onChange={(event) => {
+												const next = Number.parseFloat(event.target.value);
+												if (Number.isFinite(next)) {
+													setManualVowelF1(next);
+												}
+											}}
+										/>
+										<span>Hz</span>
+									</label>
+									<label className="trainer-field">
+										<span>Custom F2</span>
+										<input
+											type="number"
+											min={300}
+											max={4000}
+											value={manualVowelF2}
+											onChange={(event) => {
+												const next = Number.parseFloat(event.target.value);
+												if (Number.isFinite(next)) {
+													setManualVowelF2(next);
+												}
+											}}
+										/>
+										<span>Hz</span>
+									</label>
+								</div>
+							) : null}
+							<div className="trainer-readout">
+								<span>Target F1/F2 {vowelTargetDisplay}</span>
+								<span>
+									Current F1/F2{" "}
+									{formants.f1 > 0 && formants.f2 > 0
+										? `${formants.f1.toFixed(
+												0,
+											)} Hz / ${formants.f2.toFixed(0)} Hz`
+										: "—"}
+								</span>
+								<span>{vowelSummary}</span>
+							</div>
+						</div>
+					) : null}
+
+					{trainingMode === "off" ? (
+						<p className="trainer-hint">
+							Pick a pitch or vowel target to see how far your live signal is
+							from the goal.
+						</p>
+					) : null}
 				</div>
 			</section>
 
