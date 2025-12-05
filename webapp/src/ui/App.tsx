@@ -111,9 +111,9 @@ export default function App() {
 		if (!spectrumCanvas || !historyCanvas) return;
 
 		const history = historyRef.current;
-		let drawTimerSpectrum: number | null = null;
-		let drawTimerLpc: number | null = null;
-		let drawTimerHistory: number | null = null;
+		let rafSpectrum: number | null = null;
+		let rafLpc: number | null = null;
+		let rafHistory: number | null = null;
 		let formantInterval: number | null = null;
 		let worker: Worker | null = null;
 		let audioContext: AudioContext | null = null;
@@ -302,12 +302,12 @@ export default function App() {
 						);
 					}
 
-						drawTimerSpectrum = window.setTimeout(drawSpectrum, refreshMs);
-					};
+					rafSpectrum = requestAnimationFrame(drawSpectrum);
+				};
 
-					const drawLPCFilter = () => {
-						if (!analyser || !dataArray || !wasm) return;
-						const ctx = spectrumCanvas.getContext("2d");
+				const drawLPCFilter = () => {
+					if (!analyser || !dataArray || !wasm) return;
+					const ctx = spectrumCanvas.getContext("2d");
 					if (!ctx) return;
 
 					const { minFrequency, maxFrequency, logRange } =
@@ -385,12 +385,12 @@ export default function App() {
 						renderLine(current.f3, "#2f6b4f", current.f3.toFixed(0));
 					}
 
-						drawTimerLpc = window.setTimeout(drawLPCFilter, refreshMs);
-					};
+					rafLpc = requestAnimationFrame(drawLPCFilter);
+				};
 
-					const drawFormantHistory = () => {
-						const canvas = historyCanvasRef.current;
-						if (!canvas) return;
+				const drawFormantHistory = () => {
+					const canvas = historyCanvasRef.current;
+					if (!canvas) return;
 					const ctx = canvas.getContext("2d");
 					if (!ctx) return;
 
@@ -471,12 +471,12 @@ export default function App() {
 						drawLine("f3", "#2f6b4f");
 					}
 
-					drawTimerHistory = window.setTimeout(drawFormantHistory, refreshMs);
+					rafHistory = requestAnimationFrame(drawFormantHistory);
 				};
 
-				drawSpectrum();
-				drawLPCFilter();
-				drawFormantHistory();
+				rafSpectrum = requestAnimationFrame(drawSpectrum);
+				rafLpc = requestAnimationFrame(drawLPCFilter);
+				rafHistory = requestAnimationFrame(drawFormantHistory);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				setError(message);
@@ -486,9 +486,9 @@ export default function App() {
 		setup();
 
 		return () => {
-			if (drawTimerSpectrum !== null) clearTimeout(drawTimerSpectrum);
-			if (drawTimerLpc !== null) clearTimeout(drawTimerLpc);
-			if (drawTimerHistory !== null) clearTimeout(drawTimerHistory);
+			if (rafSpectrum) cancelAnimationFrame(rafSpectrum);
+			if (rafLpc) cancelAnimationFrame(rafLpc);
+			if (rafHistory) cancelAnimationFrame(rafHistory);
 			if (formantInterval !== null) clearInterval(formantInterval);
 			if (worker) worker.terminate();
 			if (stream) {
