@@ -140,7 +140,7 @@ export default function App() {
 				window.addEventListener("resize", resize);
 
 				const wasmUrl = new URL("../../pkg/webapp.js", import.meta.url).href;
-				wasm = (await import(wasmUrl)) as WasmBindings;
+				wasm = (await import(/* @vite-ignore */ wasmUrl)) as WasmBindings;
 				await wasm.default();
 
 				stream = await navigator.mediaDevices.getUserMedia({
