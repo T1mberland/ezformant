@@ -5,3 +5,4 @@ plt.py
 ./benches/audio_frame.json
 /dist
 /node_modules
+.vite

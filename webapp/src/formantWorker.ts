@@ -1,7 +1,6 @@
-import init, {
-	formant_detection_with_downsampling,
-	pitch_detection,
-} from "./pkg/webapp.js";
+/// <reference lib="WebWorker" />
+
+type WasmBindings = typeof import("../pkg/webapp.js");
 
 type InitMessage = { type: "init" };
 type CalcMessage = {
@@ -28,13 +27,14 @@ type WorkerResponse =
 
 const workerScope: DedicatedWorkerGlobalScope =
 	self as DedicatedWorkerGlobalScope;
-let wasmInitialized = false;
+let wasm: WasmBindings | null = null;
 
-async function ensureWasmLoaded() {
-	if (!wasmInitialized) {
-		await init();
-		wasmInitialized = true;
-	}
+async function ensureWasmLoaded(): Promise<WasmBindings> {
+	if (wasm) return wasm;
+	const wasmUrl = new URL("../pkg/webapp.js", import.meta.url).href;
+	wasm = (await import(wasmUrl)) as WasmBindings;
+	await wasm.default();
+	return wasm;
 }
 
 workerScope.onmessage = async (event: MessageEvent<WorkerMessage>) => {
@@ -58,16 +58,16 @@ workerScope.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
 	if (message.type === "calcFormants") {
 		try {
-			await ensureWasmLoaded();
+			const bindings = await ensureWasmLoaded();
 			const input = Float64Array.from(message.data.audioData);
 
-			const formants = formant_detection_with_downsampling(
+			const formants = bindings.formant_detection_with_downsampling(
 				input,
 				message.data.lpcOrder,
 				message.data.sampleRate,
 				message.data.downsampleFactor,
 			);
-			const pitch = pitch_detection(input, message.data.sampleRate);
+			const pitch = bindings.pitch_detection(input, message.data.sampleRate);
 
 			workerScope.postMessage({
 				type: "calcFormants",
