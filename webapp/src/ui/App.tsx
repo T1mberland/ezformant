@@ -301,7 +301,12 @@ export default function App() {
 			});
 
 			if (!best) {
-				setIsFrozen((previous) => !previous);
+				const nextFrozen = !isFrozenRef.current;
+				setIsFrozen(nextFrozen);
+				isFrozenRef.current = nextFrozen;
+				if (!nextFrozen) {
+					history.length = 0;
+				}
 				return;
 			}
 			draggingTarget = best.kind;
@@ -310,7 +315,12 @@ export default function App() {
 
 		const handleHistoryPointerDown = (event: PointerEvent) => {
 			event.preventDefault();
-			setIsFrozen((previous) => !previous);
+			const nextFrozen = !isFrozenRef.current;
+			setIsFrozen(nextFrozen);
+			isFrozenRef.current = nextFrozen;
+			if (!nextFrozen) {
+				history.length = 0;
+			}
 		};
 
 		const handlePointerMove = (event: PointerEvent) => {
