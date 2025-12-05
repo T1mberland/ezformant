@@ -32,7 +32,7 @@ let wasm: WasmBindings | null = null;
 async function ensureWasmLoaded(): Promise<WasmBindings> {
 	if (wasm) return wasm;
 	const wasmUrl = new URL("../pkg/webapp.js", import.meta.url).href;
-	wasm = (await import(wasmUrl)) as WasmBindings;
+	wasm = (await import(/* @vite-ignore */ wasmUrl)) as WasmBindings;
 	await wasm.default();
 	return wasm;
 }
