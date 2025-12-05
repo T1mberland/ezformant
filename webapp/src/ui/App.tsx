@@ -304,9 +304,6 @@ export default function App() {
 				const nextFrozen = !isFrozenRef.current;
 				setIsFrozen(nextFrozen);
 				isFrozenRef.current = nextFrozen;
-				if (!nextFrozen) {
-					history.length = 0;
-				}
 				return;
 			}
 			draggingTarget = best.kind;
@@ -318,9 +315,6 @@ export default function App() {
 			const nextFrozen = !isFrozenRef.current;
 			setIsFrozen(nextFrozen);
 			isFrozenRef.current = nextFrozen;
-			if (!nextFrozen) {
-				history.length = 0;
-			}
 		};
 
 		const handlePointerMove = (event: PointerEvent) => {
