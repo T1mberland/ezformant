@@ -159,6 +159,11 @@ export default function App() {
 	const showFFTSpectrumRef = useRef(showFFTSpectrum);
 	const showLPCSpectrumRef = useRef(showLPCSpectrum);
 	const showFormantsRef = useRef(showFormants);
+	const pitchTargetRef = useRef<number | null>(null);
+	const vowelTargetRef = useRef<{ f1: number | null; f2: number | null }>({
+		f1: null,
+		f2: null,
+	});
 
 	useEffect(() => {
 		showFFTSpectrumRef.current = showFFTSpectrum;
@@ -172,6 +177,37 @@ export default function App() {
 	useEffect(() => {
 		formantsRef.current = formants;
 	}, [formants]);
+	useEffect(() => {
+		let pitchTarget: number | null = null;
+		if (trainingMode === "pitch") {
+			if (selectedPitchId === "custom") {
+				pitchTarget = manualPitchHz;
+			} else {
+				const preset = PITCH_TARGETS.find(
+					(pitch) => pitch.id === selectedPitchId,
+				);
+				pitchTarget = preset?.freq ?? null;
+			}
+		}
+		pitchTargetRef.current = pitchTarget;
+	}, [trainingMode, selectedPitchId, manualPitchHz]);
+	useEffect(() => {
+		let f1: number | null = null;
+		let f2: number | null = null;
+		if (trainingMode === "vowel") {
+			if (selectedVowelId === "custom") {
+				f1 = manualVowelF1;
+				f2 = manualVowelF2;
+			} else {
+				const preset = VOWEL_TARGETS.find(
+					(vowel) => vowel.id === selectedVowelId,
+				);
+				f1 = preset?.f1 ?? null;
+				f2 = preset?.f2 ?? null;
+			}
+		}
+		vowelTargetRef.current = { f1, f2 };
+	}, [trainingMode, selectedVowelId, manualVowelF1, manualVowelF2]);
 
 	useEffect(() => {
 		const spectrumCanvas = spectrumCanvasRef.current;
@@ -427,6 +463,27 @@ export default function App() {
 					}
 
 					if (showFormantsRef.current) {
+						const drawTargetArrow = (freq: number, color: string) => {
+							if (!Number.isFinite(freq) || freq <= 0) return;
+							if (freq < minFrequency || freq > maxFrequency) return;
+							const xPos = frequencyToPosition(freq);
+							const baseY = spectrumCanvas.height - 18;
+							const size = 9;
+
+							ctx.save();
+							ctx.fillStyle = color;
+							ctx.strokeStyle = "rgba(0, 0, 0, 0.25)";
+							ctx.lineWidth = 1;
+							ctx.beginPath();
+							ctx.moveTo(xPos, baseY);
+							ctx.lineTo(xPos - size, baseY + size);
+							ctx.lineTo(xPos + size, baseY + size);
+							ctx.closePath();
+							ctx.fill();
+							ctx.stroke();
+							ctx.restore();
+						};
+
 						const renderLine = (
 							value: number,
 							color: string,
@@ -451,6 +508,18 @@ export default function App() {
 						renderLine(current.f1, "#1f3f58", current.f1.toFixed(0));
 						renderLine(current.f2, "#d06c3e", current.f2.toFixed(0));
 						renderLine(current.f3, "#2f6b4f", current.f3.toFixed(0));
+
+						const pitchTarget = pitchTargetRef.current;
+						const vowelTargets = vowelTargetRef.current;
+						if (pitchTarget !== null) {
+							drawTargetArrow(pitchTarget, "#f26b38");
+						}
+						if (vowelTargets.f1 !== null) {
+							drawTargetArrow(vowelTargets.f1, "#1f3f58");
+						}
+						if (vowelTargets.f2 !== null) {
+							drawTargetArrow(vowelTargets.f2, "#d06c3e");
+						}
 					}
 
 					rafLpc = requestAnimationFrame(drawLPCFilter);
