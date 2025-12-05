@@ -17,6 +17,11 @@ export default defineConfig({
 					src: "pkg/webapp_bg.wasm",
 					dest: "assets",
 				},
+				{
+					// Extra copy at dist root for any relative fallbacks
+					src: "pkg/webapp_bg.wasm",
+					dest: ".",
+				},
 			],
 		}),
 	],
