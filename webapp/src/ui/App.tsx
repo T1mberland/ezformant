@@ -334,6 +334,7 @@ export default function App() {
 	const [fileError, setFileError] = useState<string | null>(null);
 	const [filePosition, setFilePosition] = useState(0);
 	const [isScrubbing, setIsScrubbing] = useState(false);
+	const [trainerOpen, setTrainerOpen] = useState(false);
 	const [debugPanelOpen, setDebugPanelOpen] = useState(false);
 	const [debugInfo, setDebugInfo] = useState<DebugInfo>({
 		windowSize: null,
@@ -344,6 +345,11 @@ export default function App() {
 		lpcCoefficients: null,
 	});
 	const [snapshotError, setSnapshotError] = useState<string | null>(null);
+	const [showDeveloperUi] = useState(
+		() =>
+			typeof window !== "undefined" &&
+			new URLSearchParams(window.location.search).has("dev"),
+	);
 
 	const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const historyCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1586,6 +1592,15 @@ export default function App() {
 						+ WASM.
 					</p>
 				</div>
+				<button
+					type="button"
+					className="action-button"
+					onClick={() =>
+						setTheme((current) => (current === "light" ? "dark" : "light"))
+					}
+				>
+					{theme === "light" ? "Switch to dark" : "Switch to light"}
+				</button>
 			</header>
 
 			<section className="controls">
@@ -1623,24 +1638,7 @@ export default function App() {
 						/>
 						<span>LPC envelope</span>
 					</label>
-					<label className="toggle">
-						<input
-							type="checkbox"
-							checked={showFormants}
-							onChange={(e) => setShowFormants(e.target.checked)}
-						/>
-						<span>Formant markers</span>
-					</label>
 				</div>
-				<button
-					type="button"
-					className="action-button"
-					onClick={() =>
-						setTheme((current) => (current === "light" ? "dark" : "light"))
-					}
-				>
-					{theme === "light" ? "Switch to dark" : "Switch to light"}
-				</button>
 			</section>
 
 			<section className="metric input-card">
@@ -1793,258 +1791,287 @@ export default function App() {
 			<section className="trainer">
 				<div className="metric trainer-card">
 					<div className="trainer-header">
-						<div className="label">Target trainer</div>
-						<div className="trainer-modes">
-							<button
-								type="button"
-								className={trainingMode === "off" ? "active" : ""}
-								onClick={() => setTrainingMode("off")}
-							>
-								Off
-							</button>
-							<button
-								type="button"
-								className={trainingMode === "pitch" ? "active" : ""}
-								onClick={() => setTrainingMode("pitch")}
-							>
-								Pitch
-							</button>
-							<button
-								type="button"
-								className={trainingMode === "vowel" ? "active" : ""}
-								onClick={() => setTrainingMode("vowel")}
-							>
-								Vowel
-							</button>
+						<div>
+							<div className="label">Target trainer</div>
+							<div className="status-sub">
+								Optional practice view for pitch or vowels.
+							</div>
 						</div>
+						<button
+							type="button"
+							className="action-button"
+							onClick={() => setTrainerOpen((open) => !open)}
+						>
+							{trainerOpen ? "Hide" : "Show"}
+						</button>
 					</div>
 
-					{trainingMode === "pitch" ? (
-						<div className="trainer-body">
-							<label className="trainer-field">
-								<span>Target note</span>
-								<select
-									value={selectedPitchId}
-									onChange={(event) => setSelectedPitchId(event.target.value)}
-								>
-									{PITCH_TARGETS.map((target) => (
-										<option key={target.id} value={target.id}>
-											{target.label}
-										</option>
-									))}
-									<option value="custom">Custom (Hz)</option>
-								</select>
-							</label>
-							{selectedPitchId === "custom" ? (
-								<label className="trainer-field">
-									<span>Custom F0</span>
-									<input
-										type="number"
-										min={40}
-										max={2000}
-										value={manualPitchHz}
-										onChange={(event) => {
-											const next = Number.parseFloat(event.target.value);
-											if (Number.isFinite(next)) {
-												setManualPitchHz(next);
-											}
-										}}
-									/>
-									<span>Hz</span>
-								</label>
-							) : null}
-							<div className="trainer-readout">
-								<span>Target {pitchTargetLabel}</span>
-								<span>Current {formants.f0.toFixed(0)} Hz</span>
-								<span>
-									Δ{" "}
-									{pitchDiffHz !== null
-										? `${pitchDeltaLabel} (${pitchDirectionLabel})`
-										: "—"}
-								</span>
-							</div>
-						</div>
-					) : null}
-
-					{trainingMode === "vowel" ? (
-						<div className="trainer-body">
-							<label className="trainer-field">
-								<span>Target vowel</span>
-								<select
-									value={selectedVowelId}
-									onChange={(event) => setSelectedVowelId(event.target.value)}
-								>
-									{VOWEL_TARGETS.map((target) => (
-										<option key={target.id} value={target.id}>
-											{target.label} – {target.example}
-										</option>
-									))}
-									<option value="custom">Custom F1/F2</option>
-								</select>
-							</label>
-							{selectedVowelId === "custom" ? (
-								<div className="trainer-body">
-									<label className="trainer-field">
-										<span>Custom F1</span>
-										<input
-											type="number"
-											min={100}
-											max={2000}
-											value={manualVowelF1}
-											onChange={(event) => {
-												const next = Number.parseFloat(event.target.value);
-												if (Number.isFinite(next)) {
-													setManualVowelF1(next);
-												}
-											}}
-										/>
-										<span>Hz</span>
-									</label>
-									<label className="trainer-field">
-										<span>Custom F2</span>
-										<input
-											type="number"
-											min={300}
-											max={4000}
-											value={manualVowelF2}
-											onChange={(event) => {
-												const next = Number.parseFloat(event.target.value);
-												if (Number.isFinite(next)) {
-													setManualVowelF2(next);
-												}
-											}}
-										/>
-										<span>Hz</span>
-									</label>
-								</div>
-							) : null}
-							<div className="trainer-readout">
-								<span>Target F1/F2 {vowelTargetDisplay}</span>
-								<span>
-									Current F1/F2{" "}
-									{formants.f1 > 0 && formants.f2 > 0
-										? `${formants.f1.toFixed(
-												0,
-											)} Hz / ${formants.f2.toFixed(0)} Hz`
-										: "—"}
-								</span>
-								<span>{vowelSummary}</span>
-							</div>
-						</div>
-					) : null}
-
-					{trainingMode === "off" ? (
-						<p className="trainer-hint">
-							Pick a pitch or vowel target to see how far your live signal is
-							from the goal.
-						</p>
-					) : null}
-				</div>
-			</section>
-
-			<section className="metric developer-panel">
-				<div className="developer-header">
-					<div>
-						<div className="label">Developer / diagnostics</div>
-						<div className="status-sub">
-							Inspect LPC internals and export/import JSON snapshots.
-						</div>
-					</div>
-					<button
-						type="button"
-						className="action-button"
-						onClick={() => setDebugPanelOpen((open) => !open)}
-					>
-						{debugPanelOpen ? "Hide debug panel" : "Show debug panel"}
-					</button>
-				</div>
-				{debugPanelOpen ? (
-					<div className="developer-body">
-						<div className="developer-grid">
-							<div className="developer-stat">
-								<div className="label">Sample rate</div>
-								<div className="value small">
-									{debugInfo.sampleRate
-										? `${debugInfo.sampleRate.toFixed(0)} Hz`
-										: "—"}
-								</div>
-							</div>
-							<div className="developer-stat">
-								<div className="label">Window size</div>
-								<div className="value small">
-									{debugInfo.windowSize
-										? `${debugInfo.windowSize} samples`
-										: "—"}
-								</div>
-							</div>
-							<div className="developer-stat">
-								<div className="label">Window duration</div>
-								<div className="value small">
-									{debugInfo.windowDurationMs
-										? `${debugInfo.windowDurationMs.toFixed(1)} ms`
-										: "—"}
-								</div>
-							</div>
-							<div className="developer-stat">
-								<div className="label">Analysis interval</div>
-								<div className="value small">
-									{`${debugInfo.frameIntervalMs.toFixed(0)} ms`}
-								</div>
-							</div>
-							<div className="developer-stat">
-								<div className="label">Last LPC compute</div>
-								<div className="value small">
-									{debugInfo.lastFrameComputeMs
-										? `${debugInfo.lastFrameComputeMs.toFixed(2)} ms`
-										: "—"}
-								</div>
-							</div>
-						</div>
-						<div className="developer-section">
-							<div className="label">LPC coefficients</div>
-							<div className="developer-coeffs">
-								{debugInfo.lpcCoefficients &&
-								debugInfo.lpcCoefficients.length > 0 ? (
-									debugInfo.lpcCoefficients.map((coef, index) => {
-										const label = `a${index}`;
-										return (
-											<code key={label}>{`${label}=${coef.toFixed(4)}`}</code>
-										);
-									})
-								) : (
-									<span className="status-sub">
-										No coefficients yet – keep this panel open while audio is
-										running.
-									</span>
-								)}
-							</div>
-						</div>
-						<div className="developer-section">
-							<div className="label">Snapshots</div>
-							<div className="developer-actions">
+					{trainerOpen ? (
+						<>
+							<div className="trainer-modes">
 								<button
 									type="button"
-									className="action-button"
-									onClick={handleExportSnapshot}
+									className={trainingMode === "off" ? "active" : ""}
+									onClick={() => setTrainingMode("off")}
 								>
-									Export JSON snapshot
+									Off
 								</button>
-								<label className="upload-label action-button">
-									<input
-										type="file"
-										accept="application/json,.json"
-										onChange={handleImportSnapshot}
-									/>
-									<span>Import JSON snapshot</span>
-								</label>
+								<button
+									type="button"
+									className={trainingMode === "pitch" ? "active" : ""}
+									onClick={() => setTrainingMode("pitch")}
+								>
+									Pitch
+								</button>
+								<button
+									type="button"
+									className={trainingMode === "vowel" ? "active" : ""}
+									onClick={() => setTrainingMode("vowel")}
+								>
+									Vowel
+								</button>
 							</div>
-							{snapshotError ? (
-								<div className="error-inline">{snapshotError}</div>
+
+							{trainingMode === "pitch" ? (
+								<div className="trainer-body">
+									<label className="trainer-field">
+										<span>Target note</span>
+										<select
+											value={selectedPitchId}
+											onChange={(event) =>
+												setSelectedPitchId(event.target.value)
+											}
+										>
+											{PITCH_TARGETS.map((target) => (
+												<option key={target.id} value={target.id}>
+													{target.label}
+												</option>
+											))}
+											<option value="custom">Custom (Hz)</option>
+										</select>
+									</label>
+									{selectedPitchId === "custom" ? (
+										<label className="trainer-field">
+											<span>Custom F0</span>
+											<input
+												type="number"
+												min={40}
+												max={2000}
+												value={manualPitchHz}
+												onChange={(event) => {
+													const next = Number.parseFloat(event.target.value);
+													if (Number.isFinite(next)) {
+														setManualPitchHz(next);
+													}
+												}}
+											/>
+											<span>Hz</span>
+										</label>
+									) : null}
+									<div className="trainer-readout">
+										<span>Target {pitchTargetLabel}</span>
+										<span>Current {formants.f0.toFixed(0)} Hz</span>
+										<span>
+											Δ{" "}
+											{pitchDiffHz !== null
+												? `${pitchDeltaLabel} (${pitchDirectionLabel})`
+												: "—"}
+										</span>
+									</div>
+								</div>
 							) : null}
-						</div>
-					</div>
-				) : null}
+
+							{trainingMode === "vowel" ? (
+								<div className="trainer-body">
+									<label className="trainer-field">
+										<span>Target vowel</span>
+										<select
+											value={selectedVowelId}
+											onChange={(event) =>
+												setSelectedVowelId(event.target.value)
+											}
+										>
+											{VOWEL_TARGETS.map((target) => (
+												<option key={target.id} value={target.id}>
+													{target.label} – {target.example}
+												</option>
+											))}
+											<option value="custom">Custom F1/F2</option>
+										</select>
+									</label>
+									{selectedVowelId === "custom" ? (
+										<div className="trainer-body">
+											<label className="trainer-field">
+												<span>Custom F1</span>
+												<input
+													type="number"
+													min={100}
+													max={2000}
+													value={manualVowelF1}
+													onChange={(event) => {
+														const next = Number.parseFloat(
+															event.target.value,
+														);
+														if (Number.isFinite(next)) {
+															setManualVowelF1(next);
+														}
+													}}
+												/>
+												<span>Hz</span>
+											</label>
+											<label className="trainer-field">
+												<span>Custom F2</span>
+												<input
+													type="number"
+													min={300}
+													max={4000}
+													value={manualVowelF2}
+													onChange={(event) => {
+														const next = Number.parseFloat(
+															event.target.value,
+														);
+														if (Number.isFinite(next)) {
+															setManualVowelF2(next);
+														}
+													}}
+												/>
+												<span>Hz</span>
+											</label>
+										</div>
+									) : null}
+									<div className="trainer-readout">
+										<span>Target F1/F2 {vowelTargetDisplay}</span>
+										<span>
+											Current F1/F2{" "}
+											{formants.f1 > 0 && formants.f2 > 0
+												? `${formants.f1.toFixed(
+														0,
+													)} Hz / ${formants.f2.toFixed(0)} Hz`
+												: "—"}
+										</span>
+										<span>{vowelSummary}</span>
+									</div>
+								</div>
+							) : null}
+
+							{trainingMode === "off" ? (
+								<p className="trainer-hint">
+									Pick a pitch or vowel target to see how far your live signal
+									is from the goal.
+								</p>
+							) : null}
+						</>
+					) : null}
+				</div>
 			</section>
+
+			{showDeveloperUi ? (
+				<section className="metric developer-panel">
+					<div className="developer-header">
+						<div>
+							<div className="label">Developer / diagnostics</div>
+							<div className="status-sub">
+								Inspect LPC internals and export/import JSON snapshots.
+							</div>
+						</div>
+						<button
+							type="button"
+							className="action-button"
+							onClick={() => setDebugPanelOpen((open) => !open)}
+						>
+							{debugPanelOpen ? "Hide debug panel" : "Show debug panel"}
+						</button>
+					</div>
+					{debugPanelOpen ? (
+						<div className="developer-body">
+							<div className="developer-grid">
+								<div className="developer-stat">
+									<div className="label">Sample rate</div>
+									<div className="value small">
+										{debugInfo.sampleRate
+											? `${debugInfo.sampleRate.toFixed(0)} Hz`
+											: "—"}
+									</div>
+								</div>
+								<div className="developer-stat">
+									<div className="label">Window size</div>
+									<div className="value small">
+										{debugInfo.windowSize
+											? `${debugInfo.windowSize} samples`
+											: "—"}
+									</div>
+								</div>
+								<div className="developer-stat">
+									<div className="label">Window duration</div>
+									<div className="value small">
+										{debugInfo.windowDurationMs
+											? `${debugInfo.windowDurationMs.toFixed(1)} ms`
+											: "—"}
+									</div>
+								</div>
+								<div className="developer-stat">
+									<div className="label">Analysis interval</div>
+									<div className="value small">
+										{`${debugInfo.frameIntervalMs.toFixed(0)} ms`}
+									</div>
+								</div>
+								<div className="developer-stat">
+									<div className="label">Last LPC compute</div>
+									<div className="value small">
+										{debugInfo.lastFrameComputeMs
+											? `${debugInfo.lastFrameComputeMs.toFixed(2)} ms`
+											: "—"}
+									</div>
+								</div>
+							</div>
+							<div className="developer-section">
+								<div className="label">LPC coefficients</div>
+								<div className="developer-coeffs">
+									{debugInfo.lpcCoefficients &&
+									debugInfo.lpcCoefficients.length > 0 ? (
+										debugInfo.lpcCoefficients.map((coef, index) => {
+											const label = `a${index}`;
+											return (
+												<code key={label}>{`${label}=${coef.toFixed(
+													4,
+												)}`}</code>
+											);
+										})
+									) : (
+										<span className="status-sub">
+											No coefficients yet – keep this panel open while audio is
+											running.
+										</span>
+									)}
+								</div>
+							</div>
+							<div className="developer-section">
+								<div className="label">Snapshots</div>
+								<div className="developer-actions">
+									<button
+										type="button"
+										className="action-button"
+										onClick={handleExportSnapshot}
+									>
+										Export JSON snapshot
+									</button>
+									<label className="upload-label action-button">
+										<input
+											type="file"
+											accept="application/json,.json"
+											onChange={handleImportSnapshot}
+										/>
+										<span>Import JSON snapshot</span>
+									</label>
+								</div>
+								{snapshotError ? (
+									<div className="error-inline">{snapshotError}</div>
+								) : null}
+							</div>
+						</div>
+					) : null}
+				</section>
+			) : null}
 
 			<div className="canvas-shell">
 				<canvas
