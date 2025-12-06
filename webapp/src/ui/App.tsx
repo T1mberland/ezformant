@@ -164,6 +164,7 @@ export default function App() {
 	const [manualVowelF2, setManualVowelF2] = useState<number>(1500);
 	const [isFrozen, setIsFrozen] = useState(false);
 	const [inputMode, setInputMode] = useState<InputMode>("mic");
+	const [theme, setTheme] = useState<"light" | "dark">("light");
 	const [fileStatus, setFileStatus] = useState<
 		"idle" | "loading" | "playing" | "paused" | "ended" | "error"
 	>("idle");
@@ -248,6 +249,9 @@ export default function App() {
 	useEffect(() => {
 		filePositionRef.current = filePosition;
 	}, [filePosition]);
+	useEffect(() => {
+		document.body.dataset.theme = theme;
+	}, [theme]);
 	useEffect(() => {
 		trainingModeRef.current = trainingMode;
 	}, [trainingMode]);
@@ -561,9 +565,17 @@ export default function App() {
 				return;
 			}
 
+			const styles = getComputedStyle(document.body);
+			const canvasBg =
+				styles.getPropertyValue("--canvas-bg").trim() || "#f7f3ec";
+			const canvasGrid =
+				styles.getPropertyValue("--canvas-grid").trim() || "#c7bcad";
+			const canvasText =
+				styles.getPropertyValue("--canvas-text").trim() || "#5e5247";
+
 			analyser.getFloatTimeDomainData(dataArray);
 			ctx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
-			ctx.fillStyle = "#f7f3ec";
+			ctx.fillStyle = canvasBg;
 			ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
 
 			const { minFrequency, maxFrequency, logRange } = freqBoundsRef.current;
@@ -610,7 +622,7 @@ export default function App() {
 			}
 
 			const labelCount = 16;
-			ctx.fillStyle = "#5e5247";
+			ctx.fillStyle = canvasText;
 			ctx.font = "16px 'Soehne', 'Inter', sans-serif";
 			ctx.textAlign = "center";
 			ctx.textBaseline = "top";
@@ -623,7 +635,7 @@ export default function App() {
 				ctx.beginPath();
 				ctx.moveTo(x, spectrumCanvas.height);
 				ctx.lineTo(x, spectrumCanvas.height - 8);
-				ctx.strokeStyle = "#c7bcad";
+				ctx.strokeStyle = canvasGrid;
 				ctx.lineWidth = 1;
 				ctx.stroke();
 				ctx.fillText(`${Math.round(freq)} Hz`, x, spectrumCanvas.height - 22);
@@ -762,7 +774,15 @@ export default function App() {
 			}
 
 			ctx.clearRect(0, 0, canvas.width, canvas.height);
-			ctx.fillStyle = "#f7f3ec";
+			const styles = getComputedStyle(document.body);
+			const canvasBg =
+				styles.getPropertyValue("--canvas-bg").trim() || "#f7f3ec";
+			const canvasGrid =
+				styles.getPropertyValue("--canvas-grid").trim() || "#d7ccbe";
+			const canvasText =
+				styles.getPropertyValue("--canvas-text").trim() || "#5e5247";
+
+			ctx.fillStyle = canvasBg;
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 			const timeWindow = 5000;
@@ -785,8 +805,8 @@ export default function App() {
 			const numFreqTicks = 5;
 
 			ctx.save();
-			ctx.strokeStyle = "#d7ccbe";
-			ctx.fillStyle = "#5e5247";
+			ctx.strokeStyle = canvasGrid;
+			ctx.fillStyle = canvasText;
 			ctx.font = "16px 'Soehne', 'Inter', sans-serif";
 
 			for (let i = 0; i <= numTimeTicks; i += 1) {
@@ -1252,6 +1272,15 @@ export default function App() {
 						<span>Formant markers</span>
 					</label>
 				</div>
+				<button
+					type="button"
+					className="action-button"
+					onClick={() =>
+						setTheme((current) => (current === "light" ? "dark" : "light"))
+					}
+				>
+					{theme === "light" ? "Switch to dark" : "Switch to light"}
+				</button>
 			</section>
 
 			<section className="metric input-card">
