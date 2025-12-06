@@ -1,4 +1,10 @@
-import { type ChangeEvent, useEffect, useRef, useState } from "react";
+import {
+	type ChangeEvent,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 
 type WasmBindings = typeof import("../../pkg/webapp.js");
 
