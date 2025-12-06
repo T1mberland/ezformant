@@ -379,7 +379,6 @@ export default function App() {
 	const startMicInputRef = useRef<() => Promise<void> | null>(null);
 	const startFilePlaybackRef =
 		useRef<(file: File) => Promise<void> | null>(null);
-	const replayFileRef = useRef<(() => void) | null>(null);
 	const filePlaybackStartRef = useRef<number | null>(null);
 	const fileProgressRafRef = useRef<number | null>(null);
 	const fileStatusRef = useRef(fileStatus);
@@ -712,12 +711,6 @@ export default function App() {
 			}
 		};
 		startFilePlaybackRef.current = startFilePlayback;
-		replayFileRef.current = () => {
-			const buffer = fileBufferRef.current;
-			if (buffer) {
-				void startBufferPlayback(buffer, 0);
-			}
-		};
 
 		const calcFormants = () => {
 			if (isFrozenRef.current || !analysisRunningRef.current) return;
@@ -1343,12 +1336,6 @@ export default function App() {
 		}
 	};
 
-	const handleReplayFile = () => {
-		if (replayFileRef.current) {
-			replayFileRef.current();
-		}
-	};
-
 	const handleScrubStart = () => {
 		setIsScrubbing(true);
 		isScrubbingRef.current = true;
@@ -1682,14 +1669,6 @@ export default function App() {
 						<button
 							type="button"
 							className="action-button"
-							onClick={handleReplayFile}
-							disabled={!hasLoadedFile || fileStatus === "loading"}
-						>
-							Replay file
-						</button>
-						<button
-							type="button"
-							className="action-button"
 							onClick={handleTogglePlay}
 							disabled={
 								!hasLoadedFile ||
@@ -1786,9 +1765,8 @@ export default function App() {
 						</select>
 					</div>
 					<div className="status-sub">
-						{`Order ${currentLpcPreset.formantOrder}, envelope ${currentLpcPreset.spectrumOrder}, downsample ×${currentLpcPreset.downsampleFactor}`}
+						{`Order ${currentLpcPreset.formantOrder}, ×${currentLpcPreset.downsampleFactor}`}
 					</div>
-					<div className="status-sub">{currentLpcPreset.description}</div>
 				</div>
 			</section>
 
