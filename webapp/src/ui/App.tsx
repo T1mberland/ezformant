@@ -1247,11 +1247,6 @@ export default function App() {
 						+ WASM.
 					</p>
 				</div>
-				<div className="badges">
-					<span className="badge">WASM</span>
-					<span className="badge">React</span>
-					<span className="badge">Real-time</span>
-				</div>
 			</header>
 
 			<section className="controls">
