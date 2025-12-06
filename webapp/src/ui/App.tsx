@@ -1147,7 +1147,7 @@ export default function App() {
 		}
 	};
 
-	const handleTogglePlay = () => {
+	const handleTogglePlay = useCallback(() => {
 		const buffer = fileBufferRef.current;
 		if (!buffer) return;
 		if (fileStatusRef.current === "playing") {
@@ -1179,7 +1179,20 @@ export default function App() {
 				? 0
 				: Math.min(filePosition, buffer.duration);
 		void startBufferPlayback(buffer, offset);
-	};
+	}, [filePosition]);
+
+	useEffect(() => {
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.code === "Space") {
+				event.preventDefault();
+				handleTogglePlay();
+			}
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => {
+			window.removeEventListener("keydown", onKeyDown);
+		};
+	}, [handleTogglePlay]);
 
 	const hasLoadedFile = fileBufferRef.current !== null;
 	const micReady = micStreamRef.current !== null;
