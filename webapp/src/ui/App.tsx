@@ -1638,6 +1638,14 @@ export default function App() {
 						/>
 						<span>LPC envelope</span>
 					</label>
+					<label className="toggle">
+						<input
+							type="checkbox"
+							checked={showFormants}
+							onChange={(e) => setShowFormants(e.target.checked)}
+						/>
+						<span>Formant markers</span>
+					</label>
 				</div>
 			</section>
 
@@ -1645,9 +1653,7 @@ export default function App() {
 				<div className="input-header">
 					<div>
 						<div className="label">Input source</div>
-						<p className="input-hint">
-							Analyze live mic or load a WAV/MP3/OGG file (local only).
-						</p>
+						<p className="input-hint">Use mic or a local audio file.</p>
 					</div>
 					<div className="input-actions">
 						<button
@@ -1697,19 +1703,17 @@ export default function App() {
 				</div>
 				<div className="input-status">
 					<div className={`status-pill ${fileStatus}`}>{fileStatusLabel}</div>
-					<div className="status-details">
+					<div className="status-details compact">
 						<div className="status-line">
 							{inputMode === "mic"
 								? micReady
-									? "Listening to your microphone (on-device only)."
-									: "Click “Use mic” to start live analysis."
-								: fileName
-									? `File: ${fileName}`
-									: "No file selected yet."}
+									? "Live microphone."
+									: "Click “Use mic” to start."
+								: fileName || "No file selected."}
 						</div>
 						{inputMode === "file" && fileDuration ? (
 							<div className="status-sub">
-								Duration {formatDuration(fileDuration)}
+								{formatDuration(fileDuration)} total
 							</div>
 						) : null}
 						{fileError ? <div className="error-inline">{fileError}</div> : null}
