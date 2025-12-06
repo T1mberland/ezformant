@@ -439,6 +439,19 @@ body {
 	font-weight: 500;
 }
 
+.metric .value select {
+	border-radius: 999px;
+	border: 1px solid var(--border);
+	padding: 4px 10px;
+	font-size: 13px;
+	background: #fffdf9;
+	color: var(--text);
+}
+
+body[data-theme="dark"] .metric .value select {
+	background: #282828;
+}
+
 .canvas-shell {
 	position: relative;
 	min-height: 320px;

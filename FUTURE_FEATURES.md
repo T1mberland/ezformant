@@ -21,7 +21,7 @@ Analysis features
 
 - [ ]  Stability/confidence indicator for F0/F1/F2 over the last N frames.
 - [ ]  Display formant bandwidths / Q factors (e.g., as shaded regions around peaks).
-- [ ]  Advanced LPC settings: expose LPC order and downsampling factor via presets (“speech”, “singer”, “noisy”).
+- [x]  Advanced LPC settings: expose LPC order and downsampling factor via presets (“speech”, “singer”, “noisy”).
 - [ ]  Mark detected peaks on the FFT that correspond to formants.
 
 Pedagogical / practice tools
@@ -36,4 +36,3 @@ Developer/diagnostic
 
 - [ ]  Debug panel showing LPC coefficients, window size, sample rate, and timing (ms per frame).
 - [ ]  Export/import JSON snapshots of settings and basic statistics for reproducible bug reports or experiments.
-

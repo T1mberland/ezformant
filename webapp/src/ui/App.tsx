@@ -57,11 +57,19 @@ type PitchTarget = {
 
 type InputMode = "mic" | "file";
 
+type LpcPresetId = "speech" | "singer" | "noisy";
+
+type LpcPreset = {
+	id: LpcPresetId;
+	label: string;
+	description: string;
+	formantOrder: number;
+	spectrumOrder: number;
+	downsampleFactor: number;
+};
+
 const FFT_SIZE = 2048;
 const MAX_HISTORY = 1000;
-const FORMANT_ORDER = 14;
-const LPC_SPECTRUM_ORDER = 16;
-const DOWNSAMPLE_FACTOR = 4;
 const FORMANT_INTERVAL_MS = 100;
 const NOTE_NAMES = [
 	"C",
@@ -125,6 +133,33 @@ const PITCH_TARGETS: PitchTarget[] = [
 	{ id: "A4", label: "A4 (440 Hz)", freq: 440 },
 ];
 
+const LPC_PRESETS: LpcPreset[] = [
+	{
+		id: "speech",
+		label: "Speech (default)",
+		description: "Balanced for typical spoken vowels.",
+		formantOrder: 14,
+		spectrumOrder: 16,
+		downsampleFactor: 4,
+	},
+	{
+		id: "singer",
+		label: "Singer (detailed)",
+		description: "Higher order, less downsampling for rich harmonics.",
+		formantOrder: 18,
+		spectrumOrder: 20,
+		downsampleFactor: 2,
+	},
+	{
+		id: "noisy",
+		label: "Noisy (robust)",
+		description: "Smoother response for noisy environments.",
+		formantOrder: 10,
+		spectrumOrder: 12,
+		downsampleFactor: 6,
+	},
+];
+
 function frequencyToNoteName(freq: number): string {
 	if (!Number.isFinite(freq) || freq <= 0) return "—";
 	const midi = Math.round(69 + 12 * Math.log2(freq / 440));
@@ -165,6 +200,7 @@ export default function App() {
 	const [isFrozen, setIsFrozen] = useState(false);
 	const [inputMode, setInputMode] = useState<InputMode>("mic");
 	const [theme, setTheme] = useState<"light" | "dark">("light");
+	const [lpcPresetId, setLpcPresetId] = useState<LpcPresetId>("speech");
 	const [fileStatus, setFileStatus] = useState<
 		"idle" | "loading" | "playing" | "paused" | "ended" | "error"
 	>("idle");
@@ -208,6 +244,7 @@ export default function App() {
 	const fileStatusRef = useRef(fileStatus);
 	const isScrubbingRef = useRef(isScrubbing);
 	const filePositionRef = useRef(0);
+	const lpcPresetRef = useRef<LpcPreset>(LPC_PRESETS[0]);
 	const startBufferPlaybackRef = useRef<
 		((buffer: AudioBuffer, offset?: number) => Promise<void>) | null
 	>(null);
@@ -261,6 +298,12 @@ export default function App() {
 	useEffect(() => {
 		selectedVowelIdRef.current = selectedVowelId;
 	}, [selectedVowelId]);
+	useEffect(() => {
+		const preset =
+			LPC_PRESETS.find((candidate) => candidate.id === lpcPresetId) ??
+			LPC_PRESETS[0];
+		lpcPresetRef.current = preset;
+	}, [lpcPresetId]);
 	useEffect(() => {
 		// Default to mic mode on load so the "Use mic" control is selected.
 		setInputMode("mic");
@@ -538,14 +581,15 @@ export default function App() {
 			const worker = workerRef.current;
 			const audioContext = audioContextRef.current;
 			if (!analyser || !dataArray || !audioContext || !worker) return;
+			const { formantOrder, downsampleFactor } = lpcPresetRef.current;
 			analyser.getFloatTimeDomainData(dataArray);
 			const payload: WorkerRequest = {
 				type: "calcFormants",
 				data: {
 					audioData: Array.from(dataArray),
-					lpcOrder: FORMANT_ORDER,
+					lpcOrder: formantOrder,
 					sampleRate: audioContext.sampleRate,
-					downsampleFactor: DOWNSAMPLE_FACTOR,
+					downsampleFactor,
 				},
 			};
 			worker.postMessage(payload);
@@ -666,11 +710,12 @@ export default function App() {
 			if (showLPCSpectrumRef.current) {
 				analyser.getFloatTimeDomainData(dataArray);
 				const graphSize = 1024;
+				const { spectrumOrder, downsampleFactor } = lpcPresetRef.current;
 				const freqResponse = wasm.lpc_filter_freq_response_with_downsampling(
 					Float64Array.from(dataArray),
-					LPC_SPECTRUM_ORDER,
+					spectrumOrder,
 					audioContextRef.current?.sampleRate ?? 44100,
-					DOWNSAMPLE_FACTOR,
+					downsampleFactor,
 					graphSize,
 				);
 
@@ -682,7 +727,7 @@ export default function App() {
 				let started = false;
 
 				for (let i = 0; i < graphSize; i += 1) {
-					const freq = (i * maxFrequency) / graphSize / DOWNSAMPLE_FACTOR;
+					const freq = (i * maxFrequency) / graphSize / downsampleFactor;
 					if (freq < minFrequency) continue;
 
 					const xPos = frequencyToPosition(freq);
@@ -970,10 +1015,17 @@ export default function App() {
 						if (isFrozenRef.current) {
 							return;
 						}
-						const [f1, f2, f3, f4] = message.formants;
-						setFormants({ f0: message.pitch, f1, f2, f3, f4 });
+						const [rawF1, rawF2, rawF3, rawF4] = message.formants;
+						const sanitize = (value: number | undefined) =>
+							Number.isFinite(value) && value > 0 ? value : 0;
+						const f0 = sanitize(message.pitch);
+						const f1 = sanitize(rawF1);
+						const f2 = sanitize(rawF2);
+						const f3 = sanitize(rawF3);
+						const f4 = sanitize(rawF4);
+						setFormants({ f0, f1, f2, f3, f4 });
 						addFormantsToHistory({
-							f0: message.pitch,
+							f0,
 							f1,
 							f2,
 							f3,
@@ -1214,6 +1266,8 @@ export default function App() {
 				return hasLoadedFile ? "File ready" : "Choose mic or file";
 		}
 	})();
+	const currentLpcPreset =
+		LPC_PRESETS.find((preset) => preset.id === lpcPresetId) ?? LPC_PRESETS[0];
 
 	return (
 		<div className="page">
@@ -1406,6 +1460,27 @@ export default function App() {
 				<div className="metric">
 					<div className="label">F4</div>
 					<div className="value">{formants.f4.toFixed(0)} Hz</div>
+				</div>
+				<div className="metric">
+					<div className="label">LPC preset</div>
+					<div className="value">
+						<select
+							value={lpcPresetId}
+							onChange={(event) =>
+								setLpcPresetId(event.target.value as LpcPresetId)
+							}
+						>
+							{LPC_PRESETS.map((preset) => (
+								<option key={preset.id} value={preset.id}>
+									{preset.label}
+								</option>
+							))}
+						</select>
+					</div>
+					<div className="status-sub">
+						{`Order ${currentLpcPreset.formantOrder}, envelope ${currentLpcPreset.spectrumOrder}, downsample ×${currentLpcPreset.downsampleFactor}`}
+					</div>
+					<div className="status-sub">{currentLpcPreset.description}</div>
 				</div>
 			</section>
 
