@@ -1741,14 +1741,6 @@ export default function App() {
 					<div className="value">{formants.f2.toFixed(0)} Hz</div>
 				</div>
 				<div className="metric">
-					<div className="label">F3</div>
-					<div className="value">{formants.f3.toFixed(0)} Hz</div>
-				</div>
-				<div className="metric">
-					<div className="label">F4</div>
-					<div className="value">{formants.f4.toFixed(0)} Hz</div>
-				</div>
-				<div className="metric">
 					<div className="label">LPC preset</div>
 					<div className="value">
 						<select
