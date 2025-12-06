@@ -204,6 +204,7 @@ export default function App() {
 	const fileProgressRafRef = useRef<number | null>(null);
 	const fileStatusRef = useRef(fileStatus);
 	const isScrubbingRef = useRef(isScrubbing);
+	const filePositionRef = useRef(0);
 
 	const showFFTSpectrumRef = useRef(showFFTSpectrum);
 	const showLPCSpectrumRef = useRef(showLPCSpectrum);
@@ -239,6 +240,9 @@ export default function App() {
 	useEffect(() => {
 		isScrubbingRef.current = isScrubbing;
 	}, [isScrubbing]);
+	useEffect(() => {
+		filePositionRef.current = filePosition;
+	}, [filePosition]);
 	useEffect(() => {
 		trainingModeRef.current = trainingMode;
 	}, [trainingMode]);
@@ -1137,6 +1141,7 @@ export default function App() {
 		const next = Number.parseFloat(event.target.value);
 		if (Number.isFinite(next)) {
 			setFilePosition(next);
+			filePositionRef.current = next;
 		}
 	};
 
@@ -1146,6 +1151,7 @@ export default function App() {
 		const buffer = fileBufferRef.current;
 		if (!buffer) return;
 		const nextPosition = Math.min(Math.max(filePosition, 0), buffer.duration);
+		filePositionRef.current = nextPosition;
 		if (fileStatusRef.current === "playing") {
 			void startBufferPlayback(buffer, nextPosition);
 		} else {
@@ -1173,7 +1179,9 @@ export default function App() {
 			const audioContext = audioContextRef.current;
 			if (audioContext && filePlaybackStartRef.current !== null) {
 				const elapsed = audioContext.currentTime - filePlaybackStartRef.current;
-				setFilePosition(Math.min(elapsed, buffer.duration));
+				const next = Math.min(elapsed, buffer.duration);
+				setFilePosition(next);
+				filePositionRef.current = next;
 			}
 			filePlaybackStartRef.current = null;
 			setFileStatus("paused");
@@ -1183,9 +1191,9 @@ export default function App() {
 		const offset =
 			fileStatusRef.current === "ended"
 				? 0
-				: Math.min(filePosition, buffer.duration);
+				: Math.min(filePositionRef.current, buffer.duration);
 		void startBufferPlayback(buffer, offset);
-	}, [filePosition]);
+	}, []);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
