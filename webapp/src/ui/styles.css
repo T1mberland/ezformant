@@ -126,6 +126,88 @@ body {
 	gap: 10px;
 }
 
+.trainer {
+	margin-top: 8px;
+}
+
+.trainer-card {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.trainer-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.trainer-modes {
+	display: inline-flex;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.02);
+	overflow: hidden;
+}
+
+.trainer-modes button {
+	border: none;
+	background: transparent;
+	padding: 6px 10px;
+	font-size: 12px;
+	cursor: pointer;
+	color: var(--muted);
+}
+
+.trainer-modes button.active {
+	background: var(--accent);
+	color: #fff8f4;
+}
+
+.trainer-body {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.trainer-field {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	color: var(--muted);
+}
+
+.trainer-field select {
+	border-radius: 999px;
+	border: 1px solid var(--border);
+	padding: 4px 10px;
+	font-size: 13px;
+	background: #fffdf9;
+}
+
+.trainer-field input {
+	border-radius: 999px;
+	border: 1px solid var(--border);
+	padding: 4px 10px;
+	font-size: 13px;
+	background: #fffdf9;
+}
+
+.trainer-readout {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 16px;
+	font-size: 13px;
+	color: var(--text);
+}
+
+.trainer-hint {
+	margin: 0;
+	font-size: 13px;
+	color: var(--muted);
+}
+
 .metric {
 	border: 1px solid var(--border);
 	border-radius: 12px;
@@ -264,6 +346,12 @@ body {
 	color: var(--accent-2);
 	font-size: 12px;
 	font-weight: 600;
+}
+
+.frozen-badge {
+	background: rgba(184, 32, 32, 0.06);
+	color: #b82020;
+	border-color: rgba(184, 32, 32, 0.24);
 }
 
 .controls {

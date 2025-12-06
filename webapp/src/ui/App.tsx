@@ -33,6 +33,22 @@ type FormantSample = {
 	f4: number;
 };
 
+type TrainingMode = "off" | "pitch" | "vowel";
+
+type VowelTarget = {
+	id: string;
+	label: string;
+	example: string;
+	f1: number;
+	f2: number;
+};
+
+type PitchTarget = {
+	id: string;
+	label: string;
+	freq: number;
+};
+
 const FFT_SIZE = 2048;
 const MAX_HISTORY = 1000;
 const FORMANT_ORDER = 14;
@@ -51,6 +67,53 @@ const NOTE_NAMES = [
 	"A",
 	"A#",
 	"B",
+];
+
+const VOWEL_TARGETS: VowelTarget[] = [
+	{
+		id: "i",
+		label: "/i/",
+		example: "heed",
+		f1: 300,
+		f2: 2300,
+	},
+	{
+		id: "e",
+		label: "/e/",
+		example: "bed",
+		f1: 400,
+		f2: 2000,
+	},
+	{
+		id: "a",
+		label: "/a/",
+		example: "father",
+		f1: 700,
+		f2: 1100,
+	},
+	{
+		id: "o",
+		label: "/o/",
+		example: "thought",
+		f1: 500,
+		f2: 900,
+	},
+	{
+		id: "u",
+		label: "/u/",
+		example: "food",
+		f1: 350,
+		f2: 800,
+	},
+];
+
+const PITCH_TARGETS: PitchTarget[] = [
+	{ id: "G3", label: "G3 (196 Hz)", freq: 196 },
+	{ id: "A3", label: "A3 (220 Hz)", freq: 220 },
+	{ id: "C4", label: "C4 (261 Hz)", freq: 261.63 },
+	{ id: "E4", label: "E4 (329 Hz)", freq: 329.63 },
+	{ id: "G4", label: "G4 (392 Hz)", freq: 392 },
+	{ id: "A4", label: "A4 (440 Hz)", freq: 440 },
 ];
 
 function frequencyToNoteName(freq: number): string {
@@ -76,6 +139,13 @@ export default function App() {
 		f3: 0,
 		f4: 0,
 	});
+	const [trainingMode, setTrainingMode] = useState<TrainingMode>("off");
+	const [selectedVowelId, setSelectedVowelId] = useState<string>("i");
+	const [selectedPitchId, setSelectedPitchId] = useState<string>("A3");
+	const [manualPitchHz, setManualPitchHz] = useState<number>(220);
+	const [manualVowelF1, setManualVowelF1] = useState<number>(500);
+	const [manualVowelF2, setManualVowelF2] = useState<number>(1500);
+	const [isFrozen, setIsFrozen] = useState(false);
 
 	const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const historyCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -90,6 +160,12 @@ export default function App() {
 	const showFFTSpectrumRef = useRef(showFFTSpectrum);
 	const showLPCSpectrumRef = useRef(showLPCSpectrum);
 	const showFormantsRef = useRef(showFormants);
+	const isFrozenRef = useRef(isFrozen);
+	const pitchTargetRef = useRef<number | null>(null);
+	const vowelTargetRef = useRef<{ f1: number | null; f2: number | null }>({
+		f1: null,
+		f2: null,
+	});
 
 	useEffect(() => {
 		showFFTSpectrumRef.current = showFFTSpectrum;
@@ -103,7 +179,40 @@ export default function App() {
 	useEffect(() => {
 		formantsRef.current = formants;
 	}, [formants]);
-
+	useEffect(() => {
+		isFrozenRef.current = isFrozen;
+	}, [isFrozen]);
+	useEffect(() => {
+		let pitchTarget: number | null = null;
+		if (trainingMode === "pitch") {
+			if (selectedPitchId === "custom") {
+				pitchTarget = manualPitchHz;
+			} else {
+				const preset = PITCH_TARGETS.find(
+					(pitch) => pitch.id === selectedPitchId,
+				);
+				pitchTarget = preset?.freq ?? null;
+			}
+		}
+		pitchTargetRef.current = pitchTarget;
+	}, [trainingMode, selectedPitchId, manualPitchHz]);
+	useEffect(() => {
+		let f1: number | null = null;
+		let f2: number | null = null;
+		if (trainingMode === "vowel") {
+			if (selectedVowelId === "custom") {
+				f1 = manualVowelF1;
+				f2 = manualVowelF2;
+			} else {
+				const preset = VOWEL_TARGETS.find(
+					(vowel) => vowel.id === selectedVowelId,
+				);
+				f1 = preset?.f1 ?? null;
+				f2 = preset?.f2 ?? null;
+			}
+		}
+		vowelTargetRef.current = { f1, f2 };
+	}, [trainingMode, selectedVowelId, manualVowelF1, manualVowelF2]);
 	useEffect(() => {
 		const spectrumCanvas = spectrumCanvasRef.current;
 		const historyCanvas = historyCanvasRef.current;
@@ -134,13 +243,127 @@ export default function App() {
 			if (history.length > MAX_HISTORY) history.shift();
 		};
 
+		type DragTarget = "pitch" | "vowelF1" | "vowelF2";
+		let draggingTarget: DragTarget | null = null;
+
+		const positionToFrequency = (x: number) => {
+			const { minFrequency, maxFrequency, logRange } = freqBoundsRef.current;
+			const logMin = Math.log10(minFrequency);
+			const fraction = Math.min(Math.max(x / spectrumCanvas.width, 0), 1);
+			const logFreq = logMin + fraction * logRange;
+			const freq = 10 ** logFreq;
+			return Math.min(Math.max(freq, minFrequency), maxFrequency);
+		};
+
+		const handlePointerDown = (event: PointerEvent) => {
+			const rect = spectrumCanvas.getBoundingClientRect();
+			const scaleX = spectrumCanvas.width / rect.width;
+			const scaleY = spectrumCanvas.height / rect.height;
+			const x = (event.clientX - rect.left) * scaleX;
+			const _y = (event.clientY - rect.top) * scaleY;
+
+			const { minFrequency, logRange } = freqBoundsRef.current;
+			const logMin = Math.log10(minFrequency);
+			const frequencyToPosition = (freq: number) =>
+				((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
+
+			type Candidate = { kind: DragTarget; x: number };
+			const candidates: Candidate[] = [];
+
+			const pitchTarget = pitchTargetRef.current;
+			const vowelTargets = vowelTargetRef.current;
+			if (pitchTarget !== null) {
+				candidates.push({ kind: "pitch", x: frequencyToPosition(pitchTarget) });
+			}
+			if (vowelTargets.f1 !== null) {
+				candidates.push({
+					kind: "vowelF1",
+					x: frequencyToPosition(vowelTargets.f1),
+				});
+			}
+			if (vowelTargets.f2 !== null) {
+				candidates.push({
+					kind: "vowelF2",
+					x: frequencyToPosition(vowelTargets.f2),
+				});
+			}
+
+			const hitThreshold = 22;
+			let best: Candidate | null = null;
+			let bestDist = Number.POSITIVE_INFINITY;
+
+			candidates.forEach((candidate) => {
+				const dist = Math.abs(candidate.x - x);
+				if (dist < hitThreshold && dist < bestDist) {
+					best = candidate;
+					bestDist = dist;
+				}
+			});
+
+			if (!best) {
+				const nextFrozen = !isFrozenRef.current;
+				setIsFrozen(nextFrozen);
+				isFrozenRef.current = nextFrozen;
+				return;
+			}
+			draggingTarget = best.kind;
+			event.preventDefault();
+		};
+
+		const handleHistoryPointerDown = (event: PointerEvent) => {
+			event.preventDefault();
+			const nextFrozen = !isFrozenRef.current;
+			setIsFrozen(nextFrozen);
+			isFrozenRef.current = nextFrozen;
+		};
+
+		const handlePointerMove = (event: PointerEvent) => {
+			if (!draggingTarget) return;
+			const rect = spectrumCanvas.getBoundingClientRect();
+			const scaleX = spectrumCanvas.width / rect.width;
+			const x = (event.clientX - rect.left) * scaleX;
+			const freq = positionToFrequency(x);
+
+			if (draggingTarget === "pitch") {
+				if (trainingMode !== "pitch") return;
+				const clamped = Math.min(Math.max(freq, 40), 2000);
+				if (selectedPitchId !== "custom") {
+					setSelectedPitchId("custom");
+				}
+				setManualPitchHz(clamped);
+			} else if (draggingTarget === "vowelF1") {
+				if (trainingMode !== "vowel") return;
+				const clamped = Math.min(Math.max(freq, 100), 2000);
+				if (selectedVowelId !== "custom") {
+					setSelectedVowelId("custom");
+				}
+				setManualVowelF1(clamped);
+			} else if (draggingTarget === "vowelF2") {
+				if (trainingMode !== "vowel") return;
+				const clamped = Math.min(Math.max(freq, 300), 4000);
+				if (selectedVowelId !== "custom") {
+					setSelectedVowelId("custom");
+				}
+				setManualVowelF2(clamped);
+			}
+		};
+
+		const handlePointerUp = () => {
+			draggingTarget = null;
+		};
+
+		spectrumCanvas.addEventListener("pointerdown", handlePointerDown);
+		historyCanvas.addEventListener("pointerdown", handleHistoryPointerDown);
+		window.addEventListener("pointermove", handlePointerMove);
+		window.addEventListener("pointerup", handlePointerUp);
+
 		const setup = async () => {
 			try {
 				resize();
 				window.addEventListener("resize", resize);
 
 				const wasmUrl = new URL("../../pkg/webapp.js", import.meta.url).href;
-				wasm = (await import(wasmUrl)) as WasmBindings;
+				wasm = (await import(/* @vite-ignore */ wasmUrl)) as WasmBindings;
 				await wasm.default();
 
 				stream = await navigator.mediaDevices.getUserMedia({
@@ -172,6 +395,7 @@ export default function App() {
 				});
 
 				const calcFormants = () => {
+					if (isFrozenRef.current) return;
 					if (!analyser || !dataArray || !audioContext || !worker) return;
 					analyser.getFloatTimeDomainData(dataArray);
 					const payload: WorkerRequest = {
@@ -203,6 +427,9 @@ export default function App() {
 						message.formants &&
 						message.pitch !== undefined
 					) {
+						if (isFrozenRef.current) {
+							return;
+						}
 						const [f1, f2, f3, f4] = message.formants;
 						setFormants({ f0: message.pitch, f1, f2, f3, f4 });
 						addFormantsToHistory({
@@ -227,6 +454,11 @@ export default function App() {
 					if (!analyser || !dataArray || !spectrum || !wasm) return;
 					const ctx = spectrumCanvas.getContext("2d");
 					if (!ctx) return;
+
+					if (isFrozenRef.current) {
+						rafSpectrum = requestAnimationFrame(drawSpectrum);
+						return;
+					}
 
 					analyser.getFloatTimeDomainData(dataArray);
 					ctx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
@@ -316,6 +548,11 @@ export default function App() {
 					const frequencyToPosition = (freq: number) =>
 						((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
 
+					if (isFrozenRef.current) {
+						rafLpc = requestAnimationFrame(drawLPCFilter);
+						return;
+					}
+
 					if (showLPCSpectrumRef.current) {
 						analyser.getFloatTimeDomainData(dataArray);
 						const graphSize = 1024;
@@ -358,6 +595,27 @@ export default function App() {
 					}
 
 					if (showFormantsRef.current) {
+						const drawTargetArrow = (freq: number, color: string) => {
+							if (!Number.isFinite(freq) || freq <= 0) return;
+							if (freq < minFrequency || freq > maxFrequency) return;
+							const xPos = frequencyToPosition(freq);
+							const baseY = spectrumCanvas.height - 14;
+							const size = 7;
+
+							ctx.save();
+							ctx.fillStyle = color;
+							ctx.strokeStyle = "rgba(0, 0, 0, 0.2)";
+							ctx.lineWidth = 1;
+							ctx.beginPath();
+							ctx.moveTo(xPos, baseY);
+							ctx.lineTo(xPos - size, baseY + size);
+							ctx.lineTo(xPos + size, baseY + size);
+							ctx.closePath();
+							ctx.fill();
+							ctx.stroke();
+							ctx.restore();
+						};
+
 						const renderLine = (
 							value: number,
 							color: string,
@@ -382,6 +640,18 @@ export default function App() {
 						renderLine(current.f1, "#1f3f58", current.f1.toFixed(0));
 						renderLine(current.f2, "#d06c3e", current.f2.toFixed(0));
 						renderLine(current.f3, "#2f6b4f", current.f3.toFixed(0));
+
+						const pitchTarget = pitchTargetRef.current;
+						const vowelTargets = vowelTargetRef.current;
+						if (pitchTarget !== null) {
+							drawTargetArrow(pitchTarget, "#f26b38");
+						}
+						if (vowelTargets.f1 !== null) {
+							drawTargetArrow(vowelTargets.f1, "#1f3f58");
+						}
+						if (vowelTargets.f2 !== null) {
+							drawTargetArrow(vowelTargets.f2, "#d06c3e");
+						}
 					}
 
 					rafLpc = requestAnimationFrame(drawLPCFilter);
@@ -392,6 +662,11 @@ export default function App() {
 					if (!canvas) return;
 					const ctx = canvas.getContext("2d");
 					if (!ctx) return;
+
+					if (isFrozenRef.current) {
+						rafHistory = requestAnimationFrame(drawFormantHistory);
+						return;
+					}
 
 					ctx.clearRect(0, 0, canvas.width, canvas.height);
 					ctx.fillStyle = "#f7f3ec";
@@ -485,6 +760,10 @@ export default function App() {
 		setup();
 
 		return () => {
+			spectrumCanvas.removeEventListener("pointerdown", handlePointerDown);
+			historyCanvas.removeEventListener("pointerdown", handleHistoryPointerDown);
+			window.removeEventListener("pointermove", handlePointerMove);
+			window.removeEventListener("pointerup", handlePointerUp);
 			if (rafSpectrum) cancelAnimationFrame(rafSpectrum);
 			if (rafLpc) cancelAnimationFrame(rafLpc);
 			if (rafHistory) cancelAnimationFrame(rafHistory);
@@ -498,7 +777,90 @@ export default function App() {
 			if (audioContext) audioContext.close();
 			window.removeEventListener("resize", resize);
 		};
-	}, []);
+	}, [selectedPitchId, selectedVowelId, trainingMode]);
+
+	const selectedPitch = PITCH_TARGETS.find(
+		(pitch) => pitch.id === selectedPitchId,
+	);
+	const selectedVowel = VOWEL_TARGETS.find(
+		(vowel) => vowel.id === selectedVowelId,
+	);
+
+	let pitchTargetFreq: number | null = null;
+	let pitchTargetLabel = "—";
+
+	if (trainingMode === "pitch") {
+		if (selectedPitchId === "custom") {
+			pitchTargetFreq = manualPitchHz;
+			pitchTargetLabel = `${Math.round(manualPitchHz)} Hz (custom)`;
+		} else if (selectedPitch) {
+			pitchTargetFreq = selectedPitch.freq;
+			pitchTargetLabel = selectedPitch.label;
+		}
+	}
+
+	let pitchDiffHz: number | null = null;
+	let pitchDeltaLabel = "—";
+	let pitchDirectionLabel = "";
+
+	if (trainingMode === "pitch" && pitchTargetFreq !== null && formants.f0 > 0) {
+		pitchDiffHz = formants.f0 - pitchTargetFreq;
+		const sign = pitchDiffHz > 0 ? "+" : "";
+		pitchDeltaLabel = `${sign}${Math.round(pitchDiffHz)} Hz`;
+		if (Math.abs(pitchDiffHz) < 5) {
+			pitchDirectionLabel = "on target";
+		} else if (pitchDiffHz > 0) {
+			pitchDirectionLabel = "above target";
+		} else {
+			pitchDirectionLabel = "below target";
+		}
+	}
+
+	let vowelSummary = "Choose a target vowel to practice.";
+	let vowelTargetF1: number | null = null;
+	let vowelTargetF2: number | null = null;
+	let vowelTargetDisplay = "—";
+
+	if (trainingMode === "vowel") {
+		if (selectedVowelId === "custom") {
+			vowelTargetF1 = manualVowelF1;
+			vowelTargetF2 = manualVowelF2;
+			vowelTargetDisplay = `${Math.round(
+				manualVowelF1,
+			)} Hz / ${Math.round(manualVowelF2)} Hz (custom)`;
+		} else if (selectedVowel) {
+			vowelTargetF1 = selectedVowel.f1;
+			vowelTargetF2 = selectedVowel.f2;
+			vowelTargetDisplay = `${selectedVowel.f1.toFixed(
+				0,
+			)} Hz / ${selectedVowel.f2.toFixed(0)} Hz`;
+		}
+	}
+
+	if (
+		trainingMode === "vowel" &&
+		vowelTargetF1 !== null &&
+		vowelTargetF2 !== null &&
+		formants.f1 > 0 &&
+		formants.f2 > 0
+	) {
+		const deltaF1 = formants.f1 - vowelTargetF1;
+		const deltaF2 = formants.f2 - vowelTargetF2;
+		const distance = Math.hypot(deltaF1, deltaF2);
+
+		let quality = "far from target";
+		if (distance < 150) {
+			quality = "very close";
+		} else if (distance < 350) {
+			quality = "in the ballpark";
+		}
+
+		const signF1 = deltaF1 > 0 ? "+" : "";
+
+		vowelSummary = `${quality} (ΔF1 ${signF1}${Math.round(
+			deltaF1,
+		)} Hz, ΔF2 ${deltaF2 > 0 ? "+" : ""}${Math.round(deltaF2)} Hz)`;
+	}
 
 	return (
 		<div className="page">
@@ -536,6 +898,7 @@ export default function App() {
 					</button>
 				</div>
 				<div className="toggles">
+					{isFrozen ? <span className="badge frozen-badge">Frozen</span> : null}
 					<label className="toggle">
 						<input
 							type="checkbox"
@@ -586,6 +949,158 @@ export default function App() {
 				<div className="metric">
 					<div className="label">F4</div>
 					<div className="value">{formants.f4.toFixed(0)} Hz</div>
+				</div>
+			</section>
+
+			<section className="trainer">
+				<div className="metric trainer-card">
+					<div className="trainer-header">
+						<div className="label">Target trainer</div>
+						<div className="trainer-modes">
+							<button
+								type="button"
+								className={trainingMode === "off" ? "active" : ""}
+								onClick={() => setTrainingMode("off")}
+							>
+								Off
+							</button>
+							<button
+								type="button"
+								className={trainingMode === "pitch" ? "active" : ""}
+								onClick={() => setTrainingMode("pitch")}
+							>
+								Pitch
+							</button>
+							<button
+								type="button"
+								className={trainingMode === "vowel" ? "active" : ""}
+								onClick={() => setTrainingMode("vowel")}
+							>
+								Vowel
+							</button>
+						</div>
+					</div>
+
+					{trainingMode === "pitch" ? (
+						<div className="trainer-body">
+							<label className="trainer-field">
+								<span>Target note</span>
+								<select
+									value={selectedPitchId}
+									onChange={(event) => setSelectedPitchId(event.target.value)}
+								>
+									{PITCH_TARGETS.map((target) => (
+										<option key={target.id} value={target.id}>
+											{target.label}
+										</option>
+									))}
+									<option value="custom">Custom (Hz)</option>
+								</select>
+							</label>
+							{selectedPitchId === "custom" ? (
+								<label className="trainer-field">
+									<span>Custom F0</span>
+									<input
+										type="number"
+										min={40}
+										max={2000}
+										value={manualPitchHz}
+										onChange={(event) => {
+											const next = Number.parseFloat(event.target.value);
+											if (Number.isFinite(next)) {
+												setManualPitchHz(next);
+											}
+										}}
+									/>
+									<span>Hz</span>
+								</label>
+							) : null}
+							<div className="trainer-readout">
+								<span>Target {pitchTargetLabel}</span>
+								<span>Current {formants.f0.toFixed(0)} Hz</span>
+								<span>
+									Δ{" "}
+									{pitchDiffHz !== null
+										? `${pitchDeltaLabel} (${pitchDirectionLabel})`
+										: "—"}
+								</span>
+							</div>
+						</div>
+					) : null}
+
+					{trainingMode === "vowel" ? (
+						<div className="trainer-body">
+							<label className="trainer-field">
+								<span>Target vowel</span>
+								<select
+									value={selectedVowelId}
+									onChange={(event) => setSelectedVowelId(event.target.value)}
+								>
+									{VOWEL_TARGETS.map((target) => (
+										<option key={target.id} value={target.id}>
+											{target.label} – {target.example}
+										</option>
+									))}
+									<option value="custom">Custom F1/F2</option>
+								</select>
+							</label>
+							{selectedVowelId === "custom" ? (
+								<div className="trainer-body">
+									<label className="trainer-field">
+										<span>Custom F1</span>
+										<input
+											type="number"
+											min={100}
+											max={2000}
+											value={manualVowelF1}
+											onChange={(event) => {
+												const next = Number.parseFloat(event.target.value);
+												if (Number.isFinite(next)) {
+													setManualVowelF1(next);
+												}
+											}}
+										/>
+										<span>Hz</span>
+									</label>
+									<label className="trainer-field">
+										<span>Custom F2</span>
+										<input
+											type="number"
+											min={300}
+											max={4000}
+											value={manualVowelF2}
+											onChange={(event) => {
+												const next = Number.parseFloat(event.target.value);
+												if (Number.isFinite(next)) {
+													setManualVowelF2(next);
+												}
+											}}
+										/>
+										<span>Hz</span>
+									</label>
+								</div>
+							) : null}
+							<div className="trainer-readout">
+								<span>Target F1/F2 {vowelTargetDisplay}</span>
+								<span>
+									Current F1/F2{" "}
+									{formants.f1 > 0 && formants.f2 > 0
+										? `${formants.f1.toFixed(
+												0,
+											)} Hz / ${formants.f2.toFixed(0)} Hz`
+										: "—"}
+								</span>
+								<span>{vowelSummary}</span>
+							</div>
+						</div>
+					) : null}
+
+					{trainingMode === "off" ? (
+						<p className="trainer-hint">
+							Pick a pitch or vowel target to see how far your live signal is
+							from the goal.
+						</p>
+					) : null}
 				</div>
 			</section>
 
