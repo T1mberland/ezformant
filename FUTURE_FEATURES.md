@@ -4,10 +4,11 @@ Ideas for future EZ Formant development
 Visual & UX
 -----------
 
+- [x] Dark mode
 - [ ] Snap-to-vowel overlays on the F1/F2 history plot (ellipses for canonical /i, e, a, o, u/ regions).
 - [ ]  “Hold to analyze” mode: only record/compute formants while a mouse button or key is held.
 - [ ]  Screenshot/export buttons for spectrum and history views (PNG/SVG).
-- [ ] Tap to pause/resume live analysis.
+- [x]  Tap to pause/resume live analysis.
 
 Audio & recording
 -----------------
