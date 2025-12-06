@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useRef, useState } from "react";
 
 type WasmBindings = typeof import("../../pkg/webapp.js");
 
@@ -48,6 +48,8 @@ type PitchTarget = {
 	label: string;
 	freq: number;
 };
+
+type InputMode = "mic" | "file";
 
 const FFT_SIZE = 2048;
 const MAX_HISTORY = 1000;
@@ -124,6 +126,14 @@ function frequencyToNoteName(freq: number): string {
 	return `${name}${octave}`;
 }
 
+function formatDuration(seconds: number | null): string {
+	if (!Number.isFinite(seconds) || seconds === null) return "—";
+	const wholeSeconds = Math.round(seconds);
+	const mins = Math.floor(wholeSeconds / 60);
+	const secs = wholeSeconds % 60;
+	return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
 export default function App() {
 	const [activeView, setActiveView] = useState<"spectrum" | "history">(
 		"spectrum",
@@ -146,6 +156,15 @@ export default function App() {
 	const [manualVowelF1, setManualVowelF1] = useState<number>(500);
 	const [manualVowelF2, setManualVowelF2] = useState<number>(1500);
 	const [isFrozen, setIsFrozen] = useState(false);
+	const [inputMode, setInputMode] = useState<InputMode>("mic");
+	const [fileStatus, setFileStatus] = useState<
+		"idle" | "loading" | "playing" | "paused" | "ended" | "error"
+	>("idle");
+	const [fileName, setFileName] = useState("");
+	const [fileDuration, setFileDuration] = useState<number | null>(null);
+	const [fileError, setFileError] = useState<string | null>(null);
+	const [filePosition, setFilePosition] = useState(0);
+	const [isScrubbing, setIsScrubbing] = useState(false);
 
 	const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const historyCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -157,6 +176,29 @@ export default function App() {
 		logRange: Math.log10(22050) - Math.log10(20),
 	});
 
+	const audioContextRef = useRef<AudioContext | null>(null);
+	const analyserRef = useRef<AnalyserNode | null>(null);
+	const dataArrayRef = useRef<Float32Array | null>(null);
+	const spectrumRef = useRef<Float32Array | null>(null);
+	const wasmRef = useRef<WasmBindings | null>(null);
+	const workerRef = useRef<Worker | null>(null);
+	const formantIntervalRef = useRef<number | null>(null);
+	const rafSpectrumRef = useRef<number | null>(null);
+	const rafLpcRef = useRef<number | null>(null);
+	const rafHistoryRef = useRef<number | null>(null);
+	const micStreamRef = useRef<MediaStream | null>(null);
+	const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+	const fileSourceRef = useRef<AudioBufferSourceNode | null>(null);
+	const fileBufferRef = useRef<AudioBuffer | null>(null);
+	const startMicInputRef = useRef<() => Promise<void> | null>(null);
+	const startFilePlaybackRef =
+		useRef<(file: File) => Promise<void> | null>(null);
+	const replayFileRef = useRef<(() => void) | null>(null);
+	const filePlaybackStartRef = useRef<number | null>(null);
+	const fileProgressRafRef = useRef<number | null>(null);
+	const fileStatusRef = useRef(fileStatus);
+	const isScrubbingRef = useRef(isScrubbing);
+
 	const showFFTSpectrumRef = useRef(showFFTSpectrum);
 	const showLPCSpectrumRef = useRef(showLPCSpectrum);
 	const showFormantsRef = useRef(showFormants);
@@ -166,6 +208,9 @@ export default function App() {
 		f1: null,
 		f2: null,
 	});
+	const trainingModeRef = useRef<TrainingMode>("off");
+	const selectedPitchIdRef = useRef(selectedPitchId);
+	const selectedVowelIdRef = useRef(selectedVowelId);
 
 	useEffect(() => {
 		showFFTSpectrumRef.current = showFFTSpectrum;
@@ -182,6 +227,54 @@ export default function App() {
 	useEffect(() => {
 		isFrozenRef.current = isFrozen;
 	}, [isFrozen]);
+	useEffect(() => {
+		fileStatusRef.current = fileStatus;
+	}, [fileStatus]);
+	useEffect(() => {
+		isScrubbingRef.current = isScrubbing;
+	}, [isScrubbing]);
+	useEffect(() => {
+		trainingModeRef.current = trainingMode;
+	}, [trainingMode]);
+	useEffect(() => {
+		selectedPitchIdRef.current = selectedPitchId;
+	}, [selectedPitchId]);
+	useEffect(() => {
+		selectedVowelIdRef.current = selectedVowelId;
+	}, [selectedVowelId]);
+	useEffect(() => {
+		// Default to mic mode on load so the "Use mic" control is selected.
+		setInputMode("mic");
+		setFileStatus("idle");
+		setFileError(null);
+		setFileName("");
+		setFileDuration(null);
+		setFilePosition(0);
+	}, []);
+
+	useEffect(() => {
+		const startOnGesture = () => {
+			if (inputMode !== "mic") return;
+			if (micStreamRef.current) return;
+			if (startMicInputRef.current) {
+				void startMicInputRef.current();
+			}
+		};
+
+		window.addEventListener("pointerdown", startOnGesture, { once: true });
+		window.addEventListener("keydown", startOnGesture, { once: true });
+
+		return () => {
+			window.removeEventListener("pointerdown", startOnGesture);
+			window.removeEventListener("keydown", startOnGesture);
+		};
+	}, [inputMode]);
+	useEffect(() => {
+		if (fileStatus === "ended" && fileProgressRafRef.current !== null) {
+			cancelAnimationFrame(fileProgressRafRef.current);
+			fileProgressRafRef.current = null;
+		}
+	}, [fileStatus]);
 	useEffect(() => {
 		let pitchTarget: number | null = null;
 		if (trainingMode === "pitch") {
@@ -219,32 +312,24 @@ export default function App() {
 		if (!spectrumCanvas || !historyCanvas) return;
 
 		const history = historyRef.current;
-		let rafSpectrum: number | null = null;
-		let rafLpc: number | null = null;
-		let rafHistory: number | null = null;
-		let formantInterval: number | null = null;
-		let worker: Worker | null = null;
-		let audioContext: AudioContext | null = null;
-		let analyser: AnalyserNode | null = null;
-		let dataArray: Float32Array | null = null;
-		let spectrum: Float32Array | null = null;
-		let stream: MediaStream | null = null;
-		let wasm: WasmBindings | null = null;
+
+		type DragTarget = "pitch" | "vowelF1" | "vowelF2";
+		let draggingTarget: DragTarget | null = null;
 
 		const resize = () => {
-			spectrumCanvas.width = window.innerWidth;
-			spectrumCanvas.height = Math.max(320, window.innerHeight * 0.5);
-			historyCanvas.width = spectrumCanvas.width;
-			historyCanvas.height = spectrumCanvas.height;
+			const width = spectrumCanvas.clientWidth * window.devicePixelRatio;
+			const height = 360 * window.devicePixelRatio;
+
+			spectrumCanvas.width = width;
+			spectrumCanvas.height = height;
+			historyCanvas.width = width;
+			historyCanvas.height = height;
 		};
 
 		const addFormantsToHistory = (sample: FormantSample) => {
 			history.push(sample);
 			if (history.length > MAX_HISTORY) history.shift();
 		};
-
-		type DragTarget = "pitch" | "vowelF1" | "vowelF2";
-		let draggingTarget: DragTarget | null = null;
 
 		const positionToFrequency = (x: number) => {
 			const { minFrequency, maxFrequency, logRange } = freqBoundsRef.current;
@@ -260,7 +345,7 @@ export default function App() {
 			const scaleX = spectrumCanvas.width / rect.width;
 			const scaleY = spectrumCanvas.height / rect.height;
 			const x = (event.clientX - rect.left) * scaleX;
-			const _y = (event.clientY - rect.top) * scaleY;
+			const y = (event.clientY - rect.top) * scaleY;
 
 			const { minFrequency, logRange } = freqBoundsRef.current;
 			const logMin = Math.log10(minFrequency);
@@ -270,18 +355,21 @@ export default function App() {
 			type Candidate = { kind: DragTarget; x: number };
 			const candidates: Candidate[] = [];
 
-			const pitchTarget = pitchTargetRef.current;
-			const vowelTargets = vowelTargetRef.current;
+			const pitchTarget =
+				trainingModeRef.current === "pitch" ? pitchTargetRef.current : null;
+			const vowelTargets =
+				trainingModeRef.current === "vowel" ? vowelTargetRef.current : null;
+
 			if (pitchTarget !== null) {
 				candidates.push({ kind: "pitch", x: frequencyToPosition(pitchTarget) });
 			}
-			if (vowelTargets.f1 !== null) {
+			if (vowelTargets?.f1 !== null) {
 				candidates.push({
 					kind: "vowelF1",
 					x: frequencyToPosition(vowelTargets.f1),
 				});
 			}
-			if (vowelTargets.f2 !== null) {
+			if (vowelTargets?.f2 !== null) {
 				candidates.push({
 					kind: "vowelF2",
 					x: frequencyToPosition(vowelTargets.f2),
@@ -293,7 +381,7 @@ export default function App() {
 			let bestDist = Number.POSITIVE_INFINITY;
 
 			candidates.forEach((candidate) => {
-				const dist = Math.abs(candidate.x - x);
+				const dist = Math.hypot(candidate.x - x, y - spectrumCanvas.height);
 				if (dist < hitThreshold && dist < bestDist) {
 					best = candidate;
 					bestDist = dist;
@@ -325,23 +413,23 @@ export default function App() {
 			const freq = positionToFrequency(x);
 
 			if (draggingTarget === "pitch") {
-				if (trainingMode !== "pitch") return;
+				if (trainingModeRef.current !== "pitch") return;
 				const clamped = Math.min(Math.max(freq, 40), 2000);
-				if (selectedPitchId !== "custom") {
+				if (selectedPitchIdRef.current !== "custom") {
 					setSelectedPitchId("custom");
 				}
 				setManualPitchHz(clamped);
 			} else if (draggingTarget === "vowelF1") {
-				if (trainingMode !== "vowel") return;
+				if (trainingModeRef.current !== "vowel") return;
 				const clamped = Math.min(Math.max(freq, 100), 2000);
-				if (selectedVowelId !== "custom") {
+				if (selectedVowelIdRef.current !== "custom") {
 					setSelectedVowelId("custom");
 				}
 				setManualVowelF1(clamped);
 			} else if (draggingTarget === "vowelF2") {
-				if (trainingMode !== "vowel") return;
+				if (trainingModeRef.current !== "vowel") return;
 				const clamped = Math.min(Math.max(freq, 300), 4000);
-				if (selectedVowelId !== "custom") {
+				if (selectedVowelIdRef.current !== "custom") {
 					setSelectedVowelId("custom");
 				}
 				setManualVowelF2(clamped);
@@ -357,29 +445,488 @@ export default function App() {
 		window.addEventListener("pointermove", handlePointerMove);
 		window.addEventListener("pointerup", handlePointerUp);
 
-		const setup = async () => {
+		const stopCurrentInput = () => {
+			if (fileProgressRafRef.current !== null) {
+				cancelAnimationFrame(fileProgressRafRef.current);
+				fileProgressRafRef.current = null;
+			}
+			if (fileSourceRef.current) {
+				try {
+					fileSourceRef.current.onended = null;
+					fileSourceRef.current.stop();
+				} catch {
+					// ignore
+				}
+				try {
+					fileSourceRef.current.disconnect();
+				} catch {
+					// ignore
+				}
+				fileSourceRef.current = null;
+			}
+			if (micSourceRef.current) {
+				try {
+					micSourceRef.current.disconnect();
+				} catch {
+					// ignore
+				}
+				micSourceRef.current = null;
+			}
+			if (micStreamRef.current) {
+				micStreamRef.current.getTracks().forEach((track) => {
+					track.stop();
+				});
+				micStreamRef.current = null;
+			}
+			filePlaybackStartRef.current = null;
+		};
+
+		const ensureAudioBackend = async () => {
+			if (!audioContextRef.current) {
+				const audioContext = new AudioContext();
+				audioContextRef.current = audioContext;
+				const analyser = audioContext.createAnalyser();
+				analyser.fftSize = FFT_SIZE;
+				analyserRef.current = analyser;
+				dataArrayRef.current = new Float32Array(FFT_SIZE);
+				spectrumRef.current = new Float32Array(FFT_SIZE / 2);
+				freqBoundsRef.current = {
+					minFrequency: 20,
+					maxFrequency: audioContext.sampleRate / 2,
+					logRange: Math.log10(audioContext.sampleRate / 2) - Math.log10(20),
+				};
+			}
 			try {
-				resize();
-				window.addEventListener("resize", resize);
+				await audioContextRef.current?.resume();
+			} catch {
+				// ignore resume errors
+			}
+		};
 
-				const wasmUrl = new URL("../../pkg/webapp.js", import.meta.url).href;
-				wasm = (await import(/* @vite-ignore */ wasmUrl)) as WasmBindings;
-				await wasm.default();
-
-				stream = await navigator.mediaDevices.getUserMedia({
+		const startMicInput = async () => {
+			await ensureAudioBackend();
+			const audioContext = audioContextRef.current;
+			const analyser = analyserRef.current;
+			if (!audioContext || !analyser) return;
+			stopCurrentInput();
+			setFileStatus("idle");
+			setFileError(null);
+			try {
+				const stream = await navigator.mediaDevices.getUserMedia({
 					audio: {
 						autoGainControl: false,
 						noiseSuppression: false,
 						echoCancellation: false,
 					},
 				});
-
-				audioContext = new AudioContext();
-				await audioContext.resume();
+				micStreamRef.current = stream;
 				const source = audioContext.createMediaStreamSource(stream);
-				analyser = audioContext.createAnalyser();
-				analyser.fftSize = FFT_SIZE;
+				micSourceRef.current = source;
 				source.connect(analyser);
+				setInputMode("mic");
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				setError(message);
+				setFileStatus("error");
+			}
+		};
+		startMicInputRef.current = startMicInput;
+
+		const startBufferPlayback = async (buffer: AudioBuffer, offset = 0) => {
+			await ensureAudioBackend();
+			const audioContext = audioContextRef.current;
+			const analyser = analyserRef.current;
+			if (!audioContext || !analyser) return;
+			stopCurrentInput();
+			const source = audioContext.createBufferSource();
+			source.buffer = buffer;
+			source.connect(analyser);
+			source.connect(audioContext.destination);
+			fileSourceRef.current = source;
+			filePlaybackStartRef.current = audioContext.currentTime - offset;
+			setFileDuration(buffer.duration);
+			setFilePosition(Math.min(offset, buffer.duration));
+			setInputMode("file");
+			setFileStatus("playing");
+			source.onended = () => {
+				setFileStatus("ended");
+				filePlaybackStartRef.current = null;
+				setFilePosition(buffer.duration);
+			};
+			source.start(0, offset);
+			const tickProgress = () => {
+				if (!audioContext || filePlaybackStartRef.current === null) return;
+				const elapsed = audioContext.currentTime - filePlaybackStartRef.current;
+				if (!isScrubbingRef.current) {
+					setFilePosition(Math.min(elapsed, buffer.duration));
+				}
+				if (elapsed < buffer.duration && fileStatusRef.current !== "ended") {
+					fileProgressRafRef.current = requestAnimationFrame(tickProgress);
+				}
+			};
+			fileProgressRafRef.current = requestAnimationFrame(tickProgress);
+		};
+
+		const startFilePlayback = async (file: File) => {
+			await ensureAudioBackend();
+			const audioContext = audioContextRef.current;
+			if (!audioContext) return;
+			setFileError(null);
+			setError(null);
+			setFileStatus("loading");
+			try {
+				const arrayBuffer = await file.arrayBuffer();
+				const decoded = await audioContext.decodeAudioData(
+					arrayBuffer.slice(0),
+				);
+				fileBufferRef.current = decoded;
+				setFileName(file.name);
+				await startBufferPlayback(decoded, 0);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				setFileError(`Could not load file: ${message}`);
+				setFileStatus("error");
+			}
+		};
+		startFilePlaybackRef.current = startFilePlayback;
+		replayFileRef.current = () => {
+			const buffer = fileBufferRef.current;
+			if (buffer) {
+				void startBufferPlayback(buffer, 0);
+			}
+		};
+
+		const calcFormants = () => {
+			if (isFrozenRef.current) return;
+			const analyser = analyserRef.current;
+			const dataArray = dataArrayRef.current;
+			const worker = workerRef.current;
+			const audioContext = audioContextRef.current;
+			if (!analyser || !dataArray || !audioContext || !worker) return;
+			analyser.getFloatTimeDomainData(dataArray);
+			const payload: WorkerRequest = {
+				type: "calcFormants",
+				data: {
+					audioData: Array.from(dataArray),
+					lpcOrder: FORMANT_ORDER,
+					sampleRate: audioContext.sampleRate,
+					downsampleFactor: DOWNSAMPLE_FACTOR,
+				},
+			};
+			worker.postMessage(payload);
+		};
+
+		const drawSpectrum = () => {
+			const analyser = analyserRef.current;
+			const dataArray = dataArrayRef.current;
+			const spectrum = spectrumRef.current;
+			const wasm = wasmRef.current;
+			if (!analyser || !dataArray || !spectrum || !wasm) return;
+			const ctx = spectrumCanvas.getContext("2d");
+			if (!ctx) return;
+
+			if (isFrozenRef.current) {
+				rafSpectrumRef.current = requestAnimationFrame(drawSpectrum);
+				return;
+			}
+
+			analyser.getFloatTimeDomainData(dataArray);
+			ctx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+			ctx.fillStyle = "#f7f3ec";
+			ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+
+			const { minFrequency, maxFrequency, logRange } = freqBoundsRef.current;
+			const logMin = Math.log10(minFrequency);
+			const bufferLength = spectrum.length;
+
+			const frequencyToPosition = (freq: number) =>
+				((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
+
+			if (showFFTSpectrumRef.current) {
+				const spectrumData = wasm.wasm_fourier(dataArray);
+				spectrum.set(spectrumData.slice(0, bufferLength));
+
+				ctx.strokeStyle = "#f26b38";
+				ctx.lineWidth = 2;
+				ctx.beginPath();
+
+				const maxMagnitude = Math.max(
+					...spectrum.map((value) => Math.abs(value)),
+					10,
+				);
+
+				for (let i = 0; i < bufferLength; i += 1) {
+					const freq = (i * maxFrequency) / bufferLength;
+					if (freq < minFrequency || freq > maxFrequency) continue;
+
+					const x = frequencyToPosition(freq);
+					const magnitude = spectrum[i];
+
+					const logMagnitude = Math.log10(Math.abs(magnitude) + 1);
+					const logMaxMagnitude = Math.log10(maxMagnitude + 1);
+					const y =
+						spectrumCanvas.height -
+						(logMagnitude / logMaxMagnitude) * spectrumCanvas.height;
+
+					if (i === 0) {
+						ctx.moveTo(x, y);
+					} else {
+						ctx.lineTo(x, y);
+					}
+				}
+
+				ctx.stroke();
+			}
+
+			const labelCount = 16;
+			ctx.fillStyle = "#5e5247";
+			ctx.font = "16px 'Soehne', 'Inter', sans-serif";
+			ctx.textAlign = "center";
+			ctx.textBaseline = "top";
+
+			for (let i = 0; i <= labelCount; i += 1) {
+				const freq =
+					minFrequency *
+					10 ** ((freqBoundsRef.current.logRange * i) / labelCount);
+				const x = frequencyToPosition(freq);
+				ctx.beginPath();
+				ctx.moveTo(x, spectrumCanvas.height);
+				ctx.lineTo(x, spectrumCanvas.height - 8);
+				ctx.strokeStyle = "#c7bcad";
+				ctx.lineWidth = 1;
+				ctx.stroke();
+				ctx.fillText(`${Math.round(freq)} Hz`, x, spectrumCanvas.height - 22);
+			}
+
+			rafSpectrumRef.current = requestAnimationFrame(drawSpectrum);
+		};
+
+		const drawLPCFilter = () => {
+			const analyser = analyserRef.current;
+			const dataArray = dataArrayRef.current;
+			const wasm = wasmRef.current;
+			if (!analyser || !dataArray || !wasm) return;
+			const ctx = spectrumCanvas.getContext("2d");
+			if (!ctx) return;
+
+			const { minFrequency, maxFrequency, logRange } = freqBoundsRef.current;
+			const logMin = Math.log10(minFrequency);
+
+			const frequencyToPosition = (freq: number) =>
+				((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
+
+			if (isFrozenRef.current) {
+				rafLpcRef.current = requestAnimationFrame(drawLPCFilter);
+				return;
+			}
+
+			if (showLPCSpectrumRef.current) {
+				analyser.getFloatTimeDomainData(dataArray);
+				const graphSize = 1024;
+				const freqResponse = wasm.lpc_filter_freq_response_with_downsampling(
+					Float64Array.from(dataArray),
+					LPC_SPECTRUM_ORDER,
+					audioContextRef.current?.sampleRate ?? 44100,
+					DOWNSAMPLE_FACTOR,
+					graphSize,
+				);
+
+				const maxResponse = Math.max(...freqResponse);
+				const normalizeConst = maxResponse > 0 ? maxResponse : 1;
+
+				ctx.strokeStyle = "#2f6b4f";
+				ctx.beginPath();
+				let started = false;
+
+				for (let i = 0; i < graphSize; i += 1) {
+					const freq = (i * maxFrequency) / graphSize / DOWNSAMPLE_FACTOR;
+					if (freq < minFrequency) continue;
+
+					const xPos = frequencyToPosition(freq);
+					const logResponse = Math.log10(freqResponse[i] + 1);
+					const logMaxResponse = Math.log10(normalizeConst + 1);
+					const yPos =
+						spectrumCanvas.height -
+						(logResponse / logMaxResponse) * spectrumCanvas.height;
+
+					if (!started) {
+						ctx.moveTo(xPos, yPos);
+						started = true;
+					} else {
+						ctx.lineTo(xPos, yPos);
+					}
+				}
+
+				ctx.stroke();
+			}
+
+			if (showFormantsRef.current) {
+				const drawTargetArrow = (freq: number, color: string) => {
+					if (!Number.isFinite(freq) || freq <= 0) return;
+					if (freq < minFrequency || freq > maxFrequency) return;
+					const xPos = frequencyToPosition(freq);
+					const baseY = spectrumCanvas.height - 14;
+					const size = 7;
+
+					ctx.save();
+					ctx.fillStyle = color;
+					ctx.strokeStyle = "rgba(0, 0, 0, 0.2)";
+					ctx.lineWidth = 1;
+					ctx.beginPath();
+					ctx.moveTo(xPos, baseY);
+					ctx.lineTo(xPos - size, baseY + size);
+					ctx.lineTo(xPos + size, baseY + size);
+					ctx.closePath();
+					ctx.fill();
+					ctx.stroke();
+					ctx.restore();
+				};
+
+				const renderLine = (value: number, color: string, label: string) => {
+					const xPos = frequencyToPosition(value);
+					ctx.strokeStyle = color;
+					ctx.beginPath();
+					ctx.moveTo(xPos, 0);
+					ctx.lineTo(xPos, spectrumCanvas.height);
+					ctx.stroke();
+					ctx.fillStyle = color;
+					ctx.fillText(label, xPos, 8);
+				};
+
+				const current = formantsRef.current;
+				renderLine(
+					current.f0,
+					"#c24d2c",
+					`${current.f0.toFixed(0)} (${frequencyToNoteName(current.f0)})`,
+				);
+				renderLine(current.f1, "#1f3f58", current.f1.toFixed(0));
+				renderLine(current.f2, "#d06c3e", current.f2.toFixed(0));
+				renderLine(current.f3, "#2f6b4f", current.f3.toFixed(0));
+
+				const pitchTarget = pitchTargetRef.current;
+				const vowelTargets = vowelTargetRef.current;
+				if (pitchTarget !== null) {
+					drawTargetArrow(pitchTarget, "#f26b38");
+				}
+				if (vowelTargets.f1 !== null) {
+					drawTargetArrow(vowelTargets.f1, "#1f3f58");
+				}
+				if (vowelTargets.f2 !== null) {
+					drawTargetArrow(vowelTargets.f2, "#d06c3e");
+				}
+			}
+
+			rafLpcRef.current = requestAnimationFrame(drawLPCFilter);
+		};
+
+		const drawFormantHistory = () => {
+			const canvas = historyCanvasRef.current;
+			if (!canvas) return;
+			const ctx = canvas.getContext("2d");
+			if (!ctx) return;
+
+			if (isFrozenRef.current) {
+				rafHistoryRef.current = requestAnimationFrame(drawFormantHistory);
+				return;
+			}
+
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.fillStyle = "#f7f3ec";
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+			const now = performance.now();
+			const timeWindow = 5000;
+			const minTime = now - timeWindow;
+			const minFreq = 0;
+			const maxFreq = 3000;
+			const width = canvas.width;
+			const height = canvas.height;
+
+			const xFromTime = (time: number) =>
+				((time - minTime) / timeWindow) * width;
+			const yFromFreq = (freq: number) => {
+				const fraction = (freq - minFreq) / (maxFreq - minFreq);
+				return height - fraction * height;
+			};
+
+			const numTimeTicks = 5;
+			const numFreqTicks = 5;
+
+			ctx.save();
+			ctx.strokeStyle = "#d7ccbe";
+			ctx.fillStyle = "#5e5247";
+			ctx.font = "16px 'Soehne', 'Inter', sans-serif";
+
+			for (let i = 0; i <= numTimeTicks; i += 1) {
+				const fraction = i / numTimeTicks;
+				const tickTime = minTime + fraction * timeWindow;
+				const xPos = xFromTime(tickTime);
+				ctx.beginPath();
+				ctx.moveTo(xPos, 0);
+				ctx.lineTo(xPos, height);
+				ctx.stroke();
+				const elapsedSeconds = (
+					-(timeWindow - (tickTime - minTime)) / 1000
+				).toFixed(1);
+				ctx.fillText(`${elapsedSeconds}s`, xPos + 2, height - 5);
+			}
+
+			for (let i = 0; i <= numFreqTicks; i += 1) {
+				const fraction = i / numFreqTicks;
+				const freq = minFreq + fraction * (maxFreq - minFreq);
+				const yPos = yFromFreq(freq);
+				ctx.beginPath();
+				ctx.moveTo(0, yPos);
+				ctx.lineTo(width, yPos);
+				ctx.stroke();
+				ctx.fillText(`${freq.toFixed(0)} Hz`, 6, yPos - 5);
+			}
+
+			ctx.restore();
+
+			const recent = history.filter((entry) => entry.time >= minTime);
+			if (recent.length >= 2) {
+				const drawLine = (key: keyof FormantSample, color: string) => {
+					ctx.strokeStyle = color;
+					ctx.beginPath();
+					recent.forEach((entry, index) => {
+						const x = xFromTime(entry.time);
+						const y = yFromFreq(entry[key]);
+						if (index === 0) {
+							ctx.moveTo(x, y);
+						} else {
+							ctx.lineTo(x, y);
+						}
+					});
+					ctx.stroke();
+				};
+
+				drawLine("f0", "#c24d2c");
+				drawLine("f1", "#1f3f58");
+				drawLine("f2", "#d06c3e");
+				drawLine("f3", "#2f6b4f");
+			}
+
+			rafHistoryRef.current = requestAnimationFrame(drawFormantHistory);
+		};
+
+		const setup = async () => {
+			try {
+				resize();
+				window.addEventListener("resize", resize);
+
+				const wasmUrl = new URL("../../pkg/webapp.js", import.meta.url).href;
+				const wasm = (await import(/* @vite-ignore */ wasmUrl)) as WasmBindings;
+				wasmRef.current = wasm;
+				await wasm.default();
+
+				const audioContext = new AudioContext();
+				audioContextRef.current = audioContext;
+				await audioContext.resume();
+
+				const analyser = audioContext.createAnalyser();
+				analyser.fftSize = FFT_SIZE;
+				analyserRef.current = analyser;
 
 				freqBoundsRef.current = {
 					minFrequency: 20,
@@ -387,34 +934,25 @@ export default function App() {
 					logRange: Math.log10(audioContext.sampleRate / 2) - Math.log10(20),
 				};
 
-				dataArray = new Float32Array(FFT_SIZE);
-				spectrum = new Float32Array(FFT_SIZE / 2);
+				dataArrayRef.current = new Float32Array(FFT_SIZE);
+				spectrumRef.current = new Float32Array(FFT_SIZE / 2);
 
-				worker = new Worker(new URL("../formantWorker.ts", import.meta.url), {
-					type: "module",
-				});
-
-				const calcFormants = () => {
-					if (isFrozenRef.current) return;
-					if (!analyser || !dataArray || !audioContext || !worker) return;
-					analyser.getFloatTimeDomainData(dataArray);
-					const payload: WorkerRequest = {
-						type: "calcFormants",
-						data: {
-							audioData: Array.from(dataArray),
-							lpcOrder: FORMANT_ORDER,
-							sampleRate: audioContext.sampleRate,
-							downsampleFactor: DOWNSAMPLE_FACTOR,
-						},
-					};
-					worker.postMessage(payload);
-				};
+				const worker = new Worker(
+					new URL("../formantWorker.ts", import.meta.url),
+					{
+						type: "module",
+					},
+				);
+				workerRef.current = worker;
 
 				worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
 					const message = event.data;
 					if (message.type === "init") {
 						if (message.status === "success") {
-							formantInterval = window.setInterval(calcFormants, 100);
+							formantIntervalRef.current = window.setInterval(
+								calcFormants,
+								100,
+							);
 						} else {
 							setError("Failed to initialize formant worker");
 						}
@@ -449,308 +987,9 @@ export default function App() {
 				};
 
 				worker.postMessage({ type: "init" } satisfies WorkerRequest);
-
-				const drawSpectrum = () => {
-					if (!analyser || !dataArray || !spectrum || !wasm) return;
-					const ctx = spectrumCanvas.getContext("2d");
-					if (!ctx) return;
-
-					if (isFrozenRef.current) {
-						rafSpectrum = requestAnimationFrame(drawSpectrum);
-						return;
-					}
-
-					analyser.getFloatTimeDomainData(dataArray);
-					ctx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
-					ctx.fillStyle = "#f7f3ec";
-					ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
-
-					const { minFrequency, maxFrequency, logRange } =
-						freqBoundsRef.current;
-					const logMin = Math.log10(minFrequency);
-					const bufferLength = spectrum.length;
-
-					const frequencyToPosition = (freq: number) =>
-						((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
-
-					if (showFFTSpectrumRef.current) {
-						const spectrumData = wasm.wasm_fourier(dataArray);
-						spectrum.set(spectrumData.slice(0, bufferLength));
-
-						ctx.strokeStyle = "#f26b38";
-						ctx.lineWidth = 2;
-						ctx.beginPath();
-
-						const maxMagnitude = Math.max(
-							...spectrum.map((value) => Math.abs(value)),
-							10,
-						);
-
-						for (let i = 0; i < bufferLength; i += 1) {
-							const freq = (i * maxFrequency) / bufferLength;
-							if (freq < minFrequency || freq > maxFrequency) continue;
-
-							const x = frequencyToPosition(freq);
-							const magnitude = spectrum[i];
-
-							const logMagnitude = Math.log10(Math.abs(magnitude) + 1);
-							const logMaxMagnitude = Math.log10(maxMagnitude + 1);
-							const y =
-								spectrumCanvas.height -
-								(logMagnitude / logMaxMagnitude) * spectrumCanvas.height;
-
-							if (i === 0) {
-								ctx.moveTo(x, y);
-							} else {
-								ctx.lineTo(x, y);
-							}
-						}
-
-						ctx.stroke();
-					}
-
-					const labelCount = 16;
-					ctx.fillStyle = "#5e5247";
-					ctx.font = "12px 'Soehne', 'Inter', sans-serif";
-					ctx.textAlign = "center";
-					ctx.textBaseline = "top";
-
-					for (let i = 0; i <= labelCount; i += 1) {
-						const freq =
-							minFrequency *
-							10 ** ((freqBoundsRef.current.logRange * i) / labelCount);
-						const x = frequencyToPosition(freq);
-						ctx.beginPath();
-						ctx.moveTo(x, spectrumCanvas.height);
-						ctx.lineTo(x, spectrumCanvas.height - 8);
-						ctx.strokeStyle = "#c7bcad";
-						ctx.lineWidth = 1;
-						ctx.stroke();
-						ctx.fillText(
-							`${Math.round(freq)} Hz`,
-							x,
-							spectrumCanvas.height - 22,
-						);
-					}
-
-					rafSpectrum = requestAnimationFrame(drawSpectrum);
-				};
-
-				const drawLPCFilter = () => {
-					if (!analyser || !dataArray || !wasm) return;
-					const ctx = spectrumCanvas.getContext("2d");
-					if (!ctx) return;
-
-					const { minFrequency, maxFrequency, logRange } =
-						freqBoundsRef.current;
-					const logMin = Math.log10(minFrequency);
-
-					const frequencyToPosition = (freq: number) =>
-						((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
-
-					if (isFrozenRef.current) {
-						rafLpc = requestAnimationFrame(drawLPCFilter);
-						return;
-					}
-
-					if (showLPCSpectrumRef.current) {
-						analyser.getFloatTimeDomainData(dataArray);
-						const graphSize = 1024;
-						const freqResponse =
-							wasm.lpc_filter_freq_response_with_downsampling(
-								Float64Array.from(dataArray),
-								LPC_SPECTRUM_ORDER,
-								audioContext?.sampleRate ?? 44100,
-								DOWNSAMPLE_FACTOR,
-								graphSize,
-							);
-
-						const maxResponse = Math.max(...freqResponse);
-						const normalizeConst = maxResponse > 0 ? maxResponse : 1;
-
-						ctx.strokeStyle = "#2f6b4f";
-						ctx.beginPath();
-						let started = false;
-
-						for (let i = 0; i < graphSize; i += 1) {
-							const freq = (i * maxFrequency) / graphSize / DOWNSAMPLE_FACTOR;
-							if (freq < minFrequency) continue;
-
-							const xPos = frequencyToPosition(freq);
-							const logResponse = Math.log10(freqResponse[i] + 1);
-							const logMaxResponse = Math.log10(normalizeConst + 1);
-							const yPos =
-								spectrumCanvas.height -
-								(logResponse / logMaxResponse) * spectrumCanvas.height;
-
-							if (!started) {
-								ctx.moveTo(xPos, yPos);
-								started = true;
-							} else {
-								ctx.lineTo(xPos, yPos);
-							}
-						}
-
-						ctx.stroke();
-					}
-
-					if (showFormantsRef.current) {
-						const drawTargetArrow = (freq: number, color: string) => {
-							if (!Number.isFinite(freq) || freq <= 0) return;
-							if (freq < minFrequency || freq > maxFrequency) return;
-							const xPos = frequencyToPosition(freq);
-							const baseY = spectrumCanvas.height - 14;
-							const size = 7;
-
-							ctx.save();
-							ctx.fillStyle = color;
-							ctx.strokeStyle = "rgba(0, 0, 0, 0.2)";
-							ctx.lineWidth = 1;
-							ctx.beginPath();
-							ctx.moveTo(xPos, baseY);
-							ctx.lineTo(xPos - size, baseY + size);
-							ctx.lineTo(xPos + size, baseY + size);
-							ctx.closePath();
-							ctx.fill();
-							ctx.stroke();
-							ctx.restore();
-						};
-
-						const renderLine = (
-							value: number,
-							color: string,
-							label: string,
-						) => {
-							const xPos = frequencyToPosition(value);
-							ctx.strokeStyle = color;
-							ctx.beginPath();
-							ctx.moveTo(xPos, 0);
-							ctx.lineTo(xPos, spectrumCanvas.height);
-							ctx.stroke();
-							ctx.fillStyle = color;
-							ctx.fillText(label, xPos, 8);
-						};
-
-						const current = formantsRef.current;
-						renderLine(
-							current.f0,
-							"#c24d2c",
-							`${current.f0.toFixed(0)} (${frequencyToNoteName(current.f0)})`,
-						);
-						renderLine(current.f1, "#1f3f58", current.f1.toFixed(0));
-						renderLine(current.f2, "#d06c3e", current.f2.toFixed(0));
-						renderLine(current.f3, "#2f6b4f", current.f3.toFixed(0));
-
-						const pitchTarget = pitchTargetRef.current;
-						const vowelTargets = vowelTargetRef.current;
-						if (pitchTarget !== null) {
-							drawTargetArrow(pitchTarget, "#f26b38");
-						}
-						if (vowelTargets.f1 !== null) {
-							drawTargetArrow(vowelTargets.f1, "#1f3f58");
-						}
-						if (vowelTargets.f2 !== null) {
-							drawTargetArrow(vowelTargets.f2, "#d06c3e");
-						}
-					}
-
-					rafLpc = requestAnimationFrame(drawLPCFilter);
-				};
-
-				const drawFormantHistory = () => {
-					const canvas = historyCanvasRef.current;
-					if (!canvas) return;
-					const ctx = canvas.getContext("2d");
-					if (!ctx) return;
-
-					if (isFrozenRef.current) {
-						rafHistory = requestAnimationFrame(drawFormantHistory);
-						return;
-					}
-
-					ctx.clearRect(0, 0, canvas.width, canvas.height);
-					ctx.fillStyle = "#f7f3ec";
-					ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-					const now = performance.now();
-					const timeWindow = 5000;
-					const minTime = now - timeWindow;
-					const minFreq = 0;
-					const maxFreq = 3000;
-					const width = canvas.width;
-					const height = canvas.height;
-
-					const xFromTime = (time: number) =>
-						((time - minTime) / timeWindow) * width;
-					const yFromFreq = (freq: number) => {
-						const fraction = (freq - minFreq) / (maxFreq - minFreq);
-						return height - fraction * height;
-					};
-
-					const numTimeTicks = 5;
-					const numFreqTicks = 5;
-
-					ctx.save();
-					ctx.strokeStyle = "#d7ccbe";
-					ctx.fillStyle = "#5e5247";
-					ctx.font = "12px 'Soehne', 'Inter', sans-serif";
-
-					for (let i = 0; i <= numTimeTicks; i += 1) {
-						const fraction = i / numTimeTicks;
-						const tickTime = minTime + fraction * timeWindow;
-						const xPos = xFromTime(tickTime);
-						ctx.beginPath();
-						ctx.moveTo(xPos, 0);
-						ctx.lineTo(xPos, height);
-						ctx.stroke();
-						const elapsedSeconds = (
-							-(timeWindow - (tickTime - minTime)) / 1000
-						).toFixed(1);
-						ctx.fillText(`${elapsedSeconds}s`, xPos + 2, height - 5);
-					}
-
-					for (let i = 0; i <= numFreqTicks; i += 1) {
-						const fraction = i / numFreqTicks;
-						const freq = minFreq + fraction * (maxFreq - minFreq);
-						const yPos = yFromFreq(freq);
-						ctx.beginPath();
-						ctx.moveTo(0, yPos);
-						ctx.lineTo(width, yPos);
-						ctx.stroke();
-						ctx.fillText(`${freq.toFixed(0)} Hz`, 6, yPos - 5);
-					}
-
-					ctx.restore();
-
-					const recent = history.filter((entry) => entry.time >= minTime);
-					if (recent.length >= 2) {
-						const drawLine = (key: keyof FormantSample, color: string) => {
-							ctx.strokeStyle = color;
-							ctx.beginPath();
-							recent.forEach((entry, index) => {
-								const x = xFromTime(entry.time);
-								const y = yFromFreq(entry[key]);
-								if (index === 0) {
-									ctx.moveTo(x, y);
-								} else {
-									ctx.lineTo(x, y);
-								}
-							});
-							ctx.stroke();
-						};
-
-						drawLine("f0", "#c24d2c");
-						drawLine("f1", "#1f3f58");
-						drawLine("f2", "#d06c3e");
-						drawLine("f3", "#2f6b4f");
-					}
-
-					rafHistory = requestAnimationFrame(drawFormantHistory);
-				};
-
-				rafSpectrum = requestAnimationFrame(drawSpectrum);
-				rafLpc = requestAnimationFrame(drawLPCFilter);
-				rafHistory = requestAnimationFrame(drawFormantHistory);
+				rafSpectrumRef.current = requestAnimationFrame(drawSpectrum);
+				rafLpcRef.current = requestAnimationFrame(drawLPCFilter);
+				rafHistoryRef.current = requestAnimationFrame(drawFormantHistory);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				setError(message);
@@ -761,23 +1000,23 @@ export default function App() {
 
 		return () => {
 			spectrumCanvas.removeEventListener("pointerdown", handlePointerDown);
-			historyCanvas.removeEventListener("pointerdown", handleHistoryPointerDown);
+			historyCanvas.removeEventListener(
+				"pointerdown",
+				handleHistoryPointerDown,
+			);
 			window.removeEventListener("pointermove", handlePointerMove);
 			window.removeEventListener("pointerup", handlePointerUp);
-			if (rafSpectrum) cancelAnimationFrame(rafSpectrum);
-			if (rafLpc) cancelAnimationFrame(rafLpc);
-			if (rafHistory) cancelAnimationFrame(rafHistory);
-			if (formantInterval !== null) clearInterval(formantInterval);
-			if (worker) worker.terminate();
-			if (stream) {
-				stream.getTracks().forEach((track) => {
-					track.stop();
-				});
-			}
-			if (audioContext) audioContext.close();
+			if (rafSpectrumRef.current) cancelAnimationFrame(rafSpectrumRef.current);
+			if (rafLpcRef.current) cancelAnimationFrame(rafLpcRef.current);
+			if (rafHistoryRef.current) cancelAnimationFrame(rafHistoryRef.current);
+			if (formantIntervalRef.current !== null)
+				clearInterval(formantIntervalRef.current);
+			if (workerRef.current) workerRef.current.terminate();
+			stopCurrentInput();
+			if (audioContextRef.current) audioContextRef.current.close();
 			window.removeEventListener("resize", resize);
 		};
-	}, [selectedPitchId, selectedVowelId, trainingMode]);
+	}, []);
 
 	const selectedPitch = PITCH_TARGETS.find(
 		(pitch) => pitch.id === selectedPitchId,
@@ -862,6 +1101,108 @@ export default function App() {
 		)} Hz, ΔF2 ${deltaF2 > 0 ? "+" : ""}${Math.round(deltaF2)} Hz)`;
 	}
 
+	const handleFileSelect = async (event: ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0];
+		if (!file) return;
+		if (startFilePlaybackRef.current) {
+			await startFilePlaybackRef.current(file);
+		}
+		event.target.value = "";
+	};
+
+	const handleUseMic = () => {
+		if (startMicInputRef.current) {
+			void startMicInputRef.current();
+		}
+	};
+
+	const handleReplayFile = () => {
+		if (replayFileRef.current) {
+			replayFileRef.current();
+		}
+	};
+
+	const handleScrubStart = () => {
+		setIsScrubbing(true);
+		isScrubbingRef.current = true;
+	};
+
+	const handleScrubChange = (event: ChangeEvent<HTMLInputElement>) => {
+		const next = Number.parseFloat(event.target.value);
+		if (Number.isFinite(next)) {
+			setFilePosition(next);
+		}
+	};
+
+	const handleScrubEnd = () => {
+		setIsScrubbing(false);
+		isScrubbingRef.current = false;
+		const buffer = fileBufferRef.current;
+		if (!buffer) return;
+		const nextPosition = Math.min(Math.max(filePosition, 0), buffer.duration);
+		if (fileStatusRef.current === "playing") {
+			void startBufferPlayback(buffer, nextPosition);
+		} else {
+			setFilePosition(nextPosition);
+		}
+	};
+
+	const handleTogglePlay = () => {
+		const buffer = fileBufferRef.current;
+		if (!buffer) return;
+		if (fileStatusRef.current === "playing") {
+			if (fileSourceRef.current) {
+				try {
+					fileSourceRef.current.onended = null;
+					fileSourceRef.current.stop();
+				} catch {
+					// ignore
+				}
+				fileSourceRef.current = null;
+			}
+			if (fileProgressRafRef.current !== null) {
+				cancelAnimationFrame(fileProgressRafRef.current);
+				fileProgressRafRef.current = null;
+			}
+			const audioContext = audioContextRef.current;
+			if (audioContext && filePlaybackStartRef.current !== null) {
+				const elapsed = audioContext.currentTime - filePlaybackStartRef.current;
+				setFilePosition(Math.min(elapsed, buffer.duration));
+			}
+			filePlaybackStartRef.current = null;
+			setFileStatus("paused");
+			return;
+		}
+
+		const offset =
+			fileStatusRef.current === "ended"
+				? 0
+				: Math.min(filePosition, buffer.duration);
+		void startBufferPlayback(buffer, offset);
+	};
+
+	const hasLoadedFile = fileBufferRef.current !== null;
+	const micReady = micStreamRef.current !== null;
+	const fileStatusLabel = (() => {
+		switch (fileStatus) {
+			case "loading":
+				return "Loading file…";
+			case "playing":
+				return "Playing file";
+			case "paused":
+				return "Paused";
+			case "ended":
+				return "Playback finished";
+			case "error":
+				return "File error";
+			default:
+				if (inputMode === "mic") {
+					return micReady ? "Live microphone" : "Mic not started";
+				}
+				return hasLoadedFile ? "File ready" : "Choose mic or file";
+		}
+	})();
+
 	return (
 		<div className="page">
 			<header className="topbar">
@@ -923,6 +1264,106 @@ export default function App() {
 						/>
 						<span>Formant markers</span>
 					</label>
+				</div>
+			</section>
+
+			<section className="metric input-card">
+				<div className="input-header">
+					<div>
+						<div className="label">Input source</div>
+						<p className="input-hint">
+							Analyze live mic or load a WAV/MP3/OGG file (local only).
+						</p>
+					</div>
+					<div className="input-actions">
+						<button
+							type="button"
+							className={`action-button ${inputMode === "mic" ? "primary" : ""}`}
+							onClick={handleUseMic}
+							disabled={fileStatus === "loading"}
+						>
+							Use mic
+						</button>
+						<label
+							className={`upload-label action-button ${
+								fileStatus === "loading" ? "disabled" : ""
+							}`}
+						>
+							<input
+								type="file"
+								accept="audio/*"
+								onChange={handleFileSelect}
+								disabled={fileStatus === "loading"}
+							/>
+							<span>
+								{fileStatus === "loading" ? "Loading…" : "Pick audio"}
+							</span>
+						</label>
+						<button
+							type="button"
+							className="action-button"
+							onClick={handleReplayFile}
+							disabled={!hasLoadedFile || fileStatus === "loading"}
+						>
+							Replay file
+						</button>
+						<button
+							type="button"
+							className="action-button"
+							onClick={handleTogglePlay}
+							disabled={
+								!hasLoadedFile ||
+								fileStatus === "loading" ||
+								fileStatus === "error"
+							}
+						>
+							{fileStatus === "playing" ? "Pause" : "Play"}
+						</button>
+					</div>
+				</div>
+				<div className="input-status">
+					<div className={`status-pill ${fileStatus}`}>{fileStatusLabel}</div>
+					<div className="status-details">
+						<div className="status-line">
+							{inputMode === "mic"
+								? micReady
+									? "Listening to your microphone (on-device only)."
+									: "Click “Use mic” to start live analysis."
+								: fileName
+									? `File: ${fileName}`
+									: "No file selected yet."}
+						</div>
+						{inputMode === "file" && fileDuration ? (
+							<div className="status-sub">
+								Duration {formatDuration(fileDuration)}
+							</div>
+						) : null}
+						{fileError ? <div className="error-inline">{fileError}</div> : null}
+						{inputMode === "file" && hasLoadedFile && fileDuration ? (
+							<div className="scrub-row">
+								<input
+									type="range"
+									min={0}
+									max={fileDuration}
+									step={0.01}
+									value={
+										isScrubbing
+											? filePosition
+											: Math.min(filePosition, fileDuration)
+									}
+									onMouseDown={handleScrubStart}
+									onTouchStart={handleScrubStart}
+									onChange={handleScrubChange}
+									onMouseUp={handleScrubEnd}
+									onTouchEnd={handleScrubEnd}
+								/>
+								<div className="scrub-times">
+									<span>{formatDuration(filePosition)}</span>
+									<span>{formatDuration(fileDuration)}</span>
+								</div>
+							</div>
+						) : null}
+					</div>
 				</div>
 			</section>
 
