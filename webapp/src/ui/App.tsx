@@ -1636,94 +1636,6 @@ export default function App() {
 				</div>
 			</section>
 
-			<section className="metric input-card">
-				<div className="input-header">
-					<div>
-						<div className="label">Input source</div>
-						<p className="input-hint">Use mic or a local audio file.</p>
-					</div>
-					<div className="input-actions">
-						<button
-							type="button"
-							className={`action-button ${inputMode === "mic" ? "primary" : ""}`}
-							onClick={handleUseMic}
-							disabled={fileStatus === "loading"}
-						>
-							Use mic
-						</button>
-						<label
-							className={`upload-label action-button ${
-								fileStatus === "loading" ? "disabled" : ""
-							}`}
-						>
-							<input
-								type="file"
-								accept="audio/*"
-								onChange={handleFileSelect}
-								disabled={fileStatus === "loading"}
-							/>
-							<span>
-								{fileStatus === "loading" ? "Loading…" : "Pick audio"}
-							</span>
-						</label>
-						<button
-							type="button"
-							className="action-button"
-							onClick={handleTogglePlay}
-							disabled={
-								!hasLoadedFile ||
-								fileStatus === "loading" ||
-								fileStatus === "error"
-							}
-						>
-							{fileStatus === "playing" ? "Pause" : "Play"}
-						</button>
-					</div>
-				</div>
-				<div className="input-status">
-					<div className={`status-pill ${fileStatus}`}>{fileStatusLabel}</div>
-					<div className="status-details compact">
-						<div className="status-line">
-							{inputMode === "mic"
-								? micReady
-									? "Live microphone."
-									: "Click “Use mic” to start."
-								: fileName || "No file selected."}
-						</div>
-						{inputMode === "file" && fileDuration ? (
-							<div className="status-sub">
-								{formatDuration(fileDuration)} total
-							</div>
-						) : null}
-						{fileError ? <div className="error-inline">{fileError}</div> : null}
-						{inputMode === "file" && hasLoadedFile && fileDuration ? (
-							<div className="scrub-row">
-								<input
-									type="range"
-									min={0}
-									max={fileDuration}
-									step={0.01}
-									value={
-										isScrubbing
-											? filePosition
-											: Math.min(filePosition, fileDuration)
-									}
-									onMouseDown={handleScrubStart}
-									onTouchStart={handleScrubStart}
-									onChange={handleScrubChange}
-									onMouseUp={handleScrubEnd}
-									onTouchEnd={handleScrubEnd}
-								/>
-								<div className="scrub-times">
-									<span>{formatDuration(filePosition)}</span>
-									<span>{formatDuration(fileDuration)}</span>
-								</div>
-							</div>
-						) : null}
-					</div>
-				</div>
-			</section>
-
 			<section className="readout">
 				<div className="metric primary">
 					<div className="label">Pitch (F0)</div>
@@ -1762,7 +1674,98 @@ export default function App() {
 				</div>
 			</section>
 
-			<section className="trainer">
+			<section className="panels-row">
+				<section className="metric input-card">
+					<div className="input-header">
+						<div>
+							<div className="label">Input source</div>
+							<p className="input-hint">Use mic or a local audio file.</p>
+						</div>
+						<div className="input-actions">
+							<button
+								type="button"
+								className={`action-button ${inputMode === "mic" ? "primary" : ""}`}
+								onClick={handleUseMic}
+								disabled={fileStatus === "loading"}
+							>
+								Use mic
+							</button>
+							<label
+								className={`upload-label action-button ${
+									fileStatus === "loading" ? "disabled" : ""
+								}`}
+							>
+								<input
+									type="file"
+									accept="audio/*"
+									onChange={handleFileSelect}
+									disabled={fileStatus === "loading"}
+								/>
+								<span>
+									{fileStatus === "loading" ? "Loading…" : "Pick audio"}
+								</span>
+							</label>
+							<button
+								type="button"
+								className="action-button"
+								onClick={handleTogglePlay}
+								disabled={
+									!hasLoadedFile ||
+									fileStatus === "loading" ||
+									fileStatus === "error"
+								}
+							>
+								{fileStatus === "playing" ? "Pause" : "Play"}
+							</button>
+						</div>
+					</div>
+					<div className="input-status">
+						<div className={`status-pill ${fileStatus}`}>{fileStatusLabel}</div>
+						<div className="status-details compact">
+							<div className="status-line">
+								{inputMode === "mic"
+									? micReady
+										? "Live microphone."
+										: "Click “Use mic” to start."
+									: fileName || "No file selected."}
+							</div>
+							{inputMode === "file" && fileDuration ? (
+								<div className="status-sub">
+									{formatDuration(fileDuration)} total
+								</div>
+							) : null}
+							{fileError ? (
+								<div className="error-inline">{fileError}</div>
+							) : null}
+							{inputMode === "file" && hasLoadedFile && fileDuration ? (
+								<div className="scrub-row">
+									<input
+										type="range"
+										min={0}
+										max={fileDuration}
+										step={0.01}
+										value={
+											isScrubbing
+												? filePosition
+												: Math.min(filePosition, fileDuration)
+										}
+										onMouseDown={handleScrubStart}
+										onTouchStart={handleScrubStart}
+										onChange={handleScrubChange}
+										onMouseUp={handleScrubEnd}
+										onTouchEnd={handleScrubEnd}
+									/>
+									<div className="scrub-times">
+										<span>{formatDuration(filePosition)}</span>
+										<span>{formatDuration(fileDuration)}</span>
+									</div>
+								</div>
+							) : null}
+						</div>
+					</div>
+				</section>
+
+				<section className="trainer">
 				<div className="metric trainer-card">
 					<div className="trainer-header">
 						<div>
@@ -1937,6 +1940,8 @@ export default function App() {
 						</>
 					) : null}
 				</div>
+				</section>
+
 			</section>
 
 			{showDeveloperUi ? (

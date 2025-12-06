@@ -82,8 +82,6 @@ body {
 	flex-direction: column;
 	gap: 10px;
 	box-shadow: 0 10px 30px rgba(26, 16, 8, 0.06);
-	max-width: 840px;
-	align-self: flex-start;
 }
 
 .input-header {
@@ -342,7 +340,18 @@ body {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
-	max-width: 840px;
+}
+
+.panels-row {
+	display: flex;
+	gap: 10px;
+	align-items: flex-start;
+	flex-wrap: wrap;
+}
+
+.panels-row > .metric.input-card,
+.panels-row > .trainer {
+	flex: 1 1 360px;
 }
 
 .trainer-header {
