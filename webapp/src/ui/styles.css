@@ -483,6 +483,9 @@ body {
 	--muted: #6b6256;
 	--accent: #f26b38;
 	--accent-2: #2f6b4f;
+	--canvas-bg: #f7f3ec;
+	--canvas-grid: #d7ccbe;
+	--canvas-text: #5e5247;
 }
 
 * {
@@ -498,6 +501,23 @@ body {
 		radial-gradient(circle at 20% 20%, #fff7ed, transparent 40%),
 		radial-gradient(circle at 80% 10%, #f0f2ff, transparent 40%), var(--bg);
 	min-height: 100vh;
+}
+
+body[data-theme="dark"] {
+	--bg: #1d2021;
+	--panel: #282828;
+	--border: #3c3836;
+	--text: #ebdbb2;
+	--muted: #bdae93;
+	--accent: #fe8019;
+	--accent-2: #83a598;
+	--canvas-bg: #1d2021;
+	--canvas-grid: #504945;
+	--canvas-text: #ebdbb2;
+	color: var(--text);
+	background:
+		radial-gradient(circle at 25% 20%, #3c3836, transparent 45%),
+		radial-gradient(circle at 80% 10%, #32302f, transparent 45%), var(--bg);
 }
 
 .page {
