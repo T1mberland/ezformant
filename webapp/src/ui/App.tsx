@@ -158,7 +158,7 @@ export default function App() {
 	const [isFrozen, setIsFrozen] = useState(false);
 	const [inputMode, setInputMode] = useState<InputMode>("mic");
 	const [fileStatus, setFileStatus] = useState<
-		"idle" | "loading" | "playing" | "ended" | "error"
+		"idle" | "loading" | "playing" | "paused" | "ended" | "error"
 	>("idle");
 	const [fileName, setFileName] = useState("");
 	const [fileDuration, setFileDuration] = useState<number | null>(null);
@@ -1140,7 +1140,45 @@ export default function App() {
 		const buffer = fileBufferRef.current;
 		if (!buffer) return;
 		const nextPosition = Math.min(Math.max(filePosition, 0), buffer.duration);
-		void startBufferPlayback(buffer, nextPosition);
+		if (fileStatusRef.current === "playing") {
+			void startBufferPlayback(buffer, nextPosition);
+		} else {
+			setFilePosition(nextPosition);
+		}
+	};
+
+	const handleTogglePlay = () => {
+		const buffer = fileBufferRef.current;
+		if (!buffer) return;
+		if (fileStatusRef.current === "playing") {
+			if (fileSourceRef.current) {
+				try {
+					fileSourceRef.current.onended = null;
+					fileSourceRef.current.stop();
+				} catch {
+					// ignore
+				}
+				fileSourceRef.current = null;
+			}
+			if (fileProgressRafRef.current !== null) {
+				cancelAnimationFrame(fileProgressRafRef.current);
+				fileProgressRafRef.current = null;
+			}
+			const audioContext = audioContextRef.current;
+			if (audioContext && filePlaybackStartRef.current !== null) {
+				const elapsed = audioContext.currentTime - filePlaybackStartRef.current;
+				setFilePosition(Math.min(elapsed, buffer.duration));
+			}
+			filePlaybackStartRef.current = null;
+			setFileStatus("paused");
+			return;
+		}
+
+		const offset =
+			fileStatusRef.current === "ended"
+				? 0
+				: Math.min(filePosition, buffer.duration);
+		void startBufferPlayback(buffer, offset);
 	};
 
 	const hasLoadedFile = fileBufferRef.current !== null;
@@ -1151,6 +1189,8 @@ export default function App() {
 				return "Loading file…";
 			case "playing":
 				return "Playing file";
+			case "paused":
+				return "Paused";
 			case "ended":
 				return "Playback finished";
 			case "error":
@@ -1266,6 +1306,18 @@ export default function App() {
 							disabled={!hasLoadedFile || fileStatus === "loading"}
 						>
 							Replay file
+						</button>
+						<button
+							type="button"
+							className="action-button"
+							onClick={handleTogglePlay}
+							disabled={
+								!hasLoadedFile ||
+								fileStatus === "loading" ||
+								fileStatus === "error"
+							}
+						>
+							{fileStatus === "playing" ? "Pause" : "Play"}
 						</button>
 					</div>
 				</div>
