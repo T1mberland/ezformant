@@ -326,6 +326,45 @@ body {
 	background: rgba(255, 255, 255, 0.03);
 }
 
+.toggle.small {
+	padding: 4px 8px;
+	font-size: 12px;
+}
+
+.advanced-toggle {
+	border-radius: 10px;
+	border: 1px solid var(--border);
+	background: var(--panel);
+	padding: 4px 8px;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.advanced-toggle summary {
+	list-style: none;
+}
+
+.advanced-toggle summary::marker {
+	display: none;
+}
+
+.advanced-toggle summary::-webkit-details-marker {
+	display: none;
+}
+
+.advanced-toggle summary {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.advanced-toggle .advanced-body {
+	margin-top: 6px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
 .readout {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
