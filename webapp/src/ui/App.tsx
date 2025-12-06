@@ -238,6 +238,24 @@ export default function App() {
 		setFileName("");
 		setFileDuration(null);
 	}, []);
+
+	useEffect(() => {
+		const startOnGesture = () => {
+			if (inputMode !== "mic") return;
+			if (micStreamRef.current) return;
+			if (startMicInputRef.current) {
+				void startMicInputRef.current();
+			}
+		};
+
+		window.addEventListener("pointerdown", startOnGesture, { once: true });
+		window.addEventListener("keydown", startOnGesture, { once: true });
+
+		return () => {
+			window.removeEventListener("pointerdown", startOnGesture);
+			window.removeEventListener("keydown", startOnGesture);
+		};
+	}, [inputMode]);
 	useEffect(() => {
 		let pitchTarget: number | null = null;
 		if (trainingMode === "pitch") {
