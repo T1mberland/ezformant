@@ -62,6 +62,7 @@ const MAX_HISTORY = 1000;
 const FORMANT_ORDER = 14;
 const LPC_SPECTRUM_ORDER = 16;
 const DOWNSAMPLE_FACTOR = 4;
+const FORMANT_INTERVAL_MS = 100;
 const NOTE_NAMES = [
 	"C",
 	"C#",
@@ -337,8 +338,20 @@ export default function App() {
 			historyCanvas.height = height;
 		};
 
-		const addFormantsToHistory = (sample: FormantSample) => {
-			history.push(sample);
+		const addFormantsToHistory = (sample: Omit<FormantSample, "time">) => {
+			const lastTime =
+				history.length > 0 ? history[history.length - 1].time : 0;
+			const nextTime =
+				history.length === 0 ? 0 : lastTime + FORMANT_INTERVAL_MS;
+			const withTime: FormantSample = {
+				time: nextTime,
+				f0: sample.f0,
+				f1: sample.f1,
+				f2: sample.f2,
+				f3: sample.f3,
+				f4: sample.f4,
+			};
+			history.push(withTime);
 			if (history.length > MAX_HISTORY) history.shift();
 		};
 
@@ -752,9 +765,10 @@ export default function App() {
 			ctx.fillStyle = "#f7f3ec";
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-			const now = performance.now();
 			const timeWindow = 5000;
-			const minTime = now - timeWindow;
+			const latestTime =
+				history.length > 0 ? history[history.length - 1].time : 0;
+			const minTime = Math.max(0, latestTime - timeWindow);
 			const minFreq = 0;
 			const maxFreq = 3000;
 			const width = canvas.width;
@@ -939,7 +953,6 @@ export default function App() {
 						const [f1, f2, f3, f4] = message.formants;
 						setFormants({ f0: message.pitch, f1, f2, f3, f4 });
 						addFormantsToHistory({
-							time: performance.now(),
 							f0: message.pitch,
 							f1,
 							f2,
