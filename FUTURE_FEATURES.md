@@ -7,6 +7,7 @@ Visual & UX
 - [ ] Snap-to-vowel overlays on the F1/F2 history plot (ellipses for canonical /i, e, a, o, u/ regions).
 - [ ]  “Hold to analyze” mode: only record/compute formants while a mouse button or key is held.
 - [ ]  Screenshot/export buttons for spectrum and history views (PNG/SVG).
+- [ ] Tap to pause/resume live analysis.
 
 Audio & recording
 -----------------
@@ -20,7 +21,7 @@ Analysis features
 
 - [ ]  Stability/confidence indicator for F0/F1/F2 over the last N frames.
 - [ ]  Display formant bandwidths / Q factors (e.g., as shaded regions around peaks).
-- [ ]  Advanced LPC settings: expose LPC order and downsampling factor via presets (“speech”, “singer”, “noisy”).
+- [x]  Advanced LPC settings: expose LPC order and downsampling factor via presets (“speech”, “singer”, “noisy”).
 - [ ]  Mark detected peaks on the FFT that correspond to formants.
 
 Pedagogical / practice tools
@@ -35,4 +36,3 @@ Developer/diagnostic
 
 - [ ]  Debug panel showing LPC coefficients, window size, sample rate, and timing (ms per frame).
 - [ ]  Export/import JSON snapshots of settings and basic statistics for reproducible bug reports or experiments.
-
