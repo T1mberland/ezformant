@@ -230,11 +230,45 @@ body {
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
-	padding-top: 6px;
+	padding-top: 10px;
 }
 
 .scrub-row input[type="range"] {
 	width: 100%;
+	height: 10px;
+	appearance: none;
+	background: linear-gradient(90deg, var(--accent) 0%, var(--accent) 100%);
+	border-radius: 999px;
+	outline: none;
+	overflow: hidden;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.scrub-row input[type="range"]::-webkit-slider-thumb {
+	appearance: none;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #fff;
+	border: 2px solid var(--accent);
+	box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+	cursor: pointer;
+}
+
+.scrub-row input[type="range"]::-moz-range-thumb {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #fff;
+	border: 2px solid var(--accent);
+	box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+	cursor: pointer;
+}
+
+.scrub-row input[type="range"]::-moz-range-track {
+	background: linear-gradient(90deg, var(--accent) 0%, var(--accent) 100%);
+	height: 10px;
+	border-radius: 999px;
 }
 
 .scrub-times {
