@@ -1154,14 +1154,13 @@ export default function App() {
 		setIsScrubbing(false);
 		isScrubbingRef.current = false;
 		const buffer = fileBufferRef.current;
+		const startBufferPlayback = startBufferPlaybackRef.current;
 		if (!buffer) return;
+		if (!startBufferPlayback) return;
 		const nextPosition = Math.min(Math.max(filePosition, 0), buffer.duration);
 		filePositionRef.current = nextPosition;
-		if (fileStatusRef.current === "playing") {
-			void startBufferPlayback(buffer, nextPosition);
-		} else {
-			setFilePosition(nextPosition);
-		}
+		setFilePosition(nextPosition);
+		void startBufferPlayback(buffer, nextPosition);
 	};
 
 	const handleTogglePlay = useCallback(() => {
@@ -1247,11 +1246,6 @@ export default function App() {
 						Live spectrum, LPC envelope, and formant tracks powered by WebAudio
 						+ WASM.
 					</p>
-				</div>
-				<div className="badges">
-					<span className="badge">WASM</span>
-					<span className="badge">React</span>
-					<span className="badge">Real-time</span>
 				</div>
 			</header>
 
