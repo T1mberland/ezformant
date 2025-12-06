@@ -22,7 +22,7 @@ Analysis features
 - [ ]  Stability/confidence indicator for F0/F1/F2 over the last N frames.
 - [ ]  Display formant bandwidths / Q factors (e.g., as shaded regions around peaks).
 - [ ]  Advanced LPC settings: expose LPC order and downsampling factor via presets (“speech”, “singer”, “noisy”).
-- [ ]  Mark detected peaks on the FFT that correspond to formants.
+- [ ]  Mark detected peaks on the FFT.
 
 Pedagogical / practice tools
 ----------------------------
