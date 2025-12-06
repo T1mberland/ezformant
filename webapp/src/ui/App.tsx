@@ -1154,14 +1154,13 @@ export default function App() {
 		setIsScrubbing(false);
 		isScrubbingRef.current = false;
 		const buffer = fileBufferRef.current;
+		const startBufferPlayback = startBufferPlaybackRef.current;
 		if (!buffer) return;
+		if (!startBufferPlayback) return;
 		const nextPosition = Math.min(Math.max(filePosition, 0), buffer.duration);
 		filePositionRef.current = nextPosition;
-		if (fileStatusRef.current === "playing") {
-			void startBufferPlayback(buffer, nextPosition);
-		} else {
-			setFilePosition(nextPosition);
-		}
+		setFilePosition(nextPosition);
+		void startBufferPlayback(buffer, nextPosition);
 	};
 
 	const handleTogglePlay = useCallback(() => {
