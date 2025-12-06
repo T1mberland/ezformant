@@ -62,6 +62,7 @@ const MAX_HISTORY = 1000;
 const FORMANT_ORDER = 14;
 const LPC_SPECTRUM_ORDER = 16;
 const DOWNSAMPLE_FACTOR = 4;
+const FORMANT_INTERVAL_MS = 100;
 const NOTE_NAMES = [
 	"C",
 	"C#",
@@ -163,6 +164,7 @@ export default function App() {
 	const [manualVowelF2, setManualVowelF2] = useState<number>(1500);
 	const [isFrozen, setIsFrozen] = useState(false);
 	const [inputMode, setInputMode] = useState<InputMode>("mic");
+	const [theme, setTheme] = useState<"light" | "dark">("light");
 	const [fileStatus, setFileStatus] = useState<
 		"idle" | "loading" | "playing" | "paused" | "ended" | "error"
 	>("idle");
@@ -192,6 +194,7 @@ export default function App() {
 	const rafSpectrumRef = useRef<number | null>(null);
 	const rafLpcRef = useRef<number | null>(null);
 	const rafHistoryRef = useRef<number | null>(null);
+	const analysisRunningRef = useRef(true);
 	const micStreamRef = useRef<MediaStream | null>(null);
 	const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 	const fileSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -246,6 +249,9 @@ export default function App() {
 	useEffect(() => {
 		filePositionRef.current = filePosition;
 	}, [filePosition]);
+	useEffect(() => {
+		document.body.dataset.theme = theme;
+	}, [theme]);
 	useEffect(() => {
 		trainingModeRef.current = trainingMode;
 	}, [trainingMode]);
@@ -326,9 +332,6 @@ export default function App() {
 
 		const history = historyRef.current;
 
-		type DragTarget = "pitch" | "vowelF1" | "vowelF2";
-		let draggingTarget: DragTarget | null = null;
-
 		const resize = () => {
 			const width = spectrumCanvas.clientWidth * window.devicePixelRatio;
 			const height = 360 * window.devicePixelRatio;
@@ -339,119 +342,36 @@ export default function App() {
 			historyCanvas.height = height;
 		};
 
-		const addFormantsToHistory = (sample: FormantSample) => {
-			history.push(sample);
+		const addFormantsToHistory = (sample: Omit<FormantSample, "time">) => {
+			const lastTime =
+				history.length > 0 ? history[history.length - 1].time : 0;
+			const nextTime =
+				history.length === 0 ? 0 : lastTime + FORMANT_INTERVAL_MS;
+			const withTime: FormantSample = {
+				time: nextTime,
+				f0: sample.f0,
+				f1: sample.f1,
+				f2: sample.f2,
+				f3: sample.f3,
+				f4: sample.f4,
+			};
+			history.push(withTime);
 			if (history.length > MAX_HISTORY) history.shift();
 		};
 
-		const positionToFrequency = (x: number) => {
-			const { minFrequency, maxFrequency, logRange } = freqBoundsRef.current;
-			const logMin = Math.log10(minFrequency);
-			const fraction = Math.min(Math.max(x / spectrumCanvas.width, 0), 1);
-			const logFreq = logMin + fraction * logRange;
-			const freq = 10 ** logFreq;
-			return Math.min(Math.max(freq, minFrequency), maxFrequency);
-		};
-
 		const handlePointerDown = (event: PointerEvent) => {
-			const rect = spectrumCanvas.getBoundingClientRect();
-			const scaleX = spectrumCanvas.width / rect.width;
-			const scaleY = spectrumCanvas.height / rect.height;
-			const x = (event.clientX - rect.left) * scaleX;
-			const y = (event.clientY - rect.top) * scaleY;
-
-			const { minFrequency, logRange } = freqBoundsRef.current;
-			const logMin = Math.log10(minFrequency);
-			const frequencyToPosition = (freq: number) =>
-				((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
-
-			type Candidate = { kind: DragTarget; x: number };
-			const candidates: Candidate[] = [];
-
-			const pitchTarget =
-				trainingModeRef.current === "pitch" ? pitchTargetRef.current : null;
-			const vowelTargets =
-				trainingModeRef.current === "vowel" ? vowelTargetRef.current : null;
-
-			if (pitchTarget !== null) {
-				candidates.push({ kind: "pitch", x: frequencyToPosition(pitchTarget) });
-			}
-			if (vowelTargets?.f1 !== null) {
-				candidates.push({
-					kind: "vowelF1",
-					x: frequencyToPosition(vowelTargets.f1),
-				});
-			}
-			if (vowelTargets?.f2 !== null) {
-				candidates.push({
-					kind: "vowelF2",
-					x: frequencyToPosition(vowelTargets.f2),
-				});
-			}
-
-			const hitThreshold = 22;
-			let best: Candidate | null = null;
-			let bestDist = Number.POSITIVE_INFINITY;
-
-			candidates.forEach((candidate) => {
-				const dist = Math.hypot(candidate.x - x, y - spectrumCanvas.height);
-				if (dist < hitThreshold && dist < bestDist) {
-					best = candidate;
-					bestDist = dist;
-				}
-			});
-
-			if (!best) {
-				const nextFrozen = !isFrozenRef.current;
-				setIsFrozen(nextFrozen);
-				isFrozenRef.current = nextFrozen;
-				return;
-			}
-			draggingTarget = best.kind;
 			event.preventDefault();
+			toggleAnalysisFreeze();
 		};
 
 		const handleHistoryPointerDown = (event: PointerEvent) => {
 			event.preventDefault();
-			const nextFrozen = !isFrozenRef.current;
-			setIsFrozen(nextFrozen);
-			isFrozenRef.current = nextFrozen;
+			toggleAnalysisFreeze();
 		};
 
-		const handlePointerMove = (event: PointerEvent) => {
-			if (!draggingTarget) return;
-			const rect = spectrumCanvas.getBoundingClientRect();
-			const scaleX = spectrumCanvas.width / rect.width;
-			const x = (event.clientX - rect.left) * scaleX;
-			const freq = positionToFrequency(x);
+		const handlePointerMove = (_event: PointerEvent) => {};
 
-			if (draggingTarget === "pitch") {
-				if (trainingModeRef.current !== "pitch") return;
-				const clamped = Math.min(Math.max(freq, 40), 2000);
-				if (selectedPitchIdRef.current !== "custom") {
-					setSelectedPitchId("custom");
-				}
-				setManualPitchHz(clamped);
-			} else if (draggingTarget === "vowelF1") {
-				if (trainingModeRef.current !== "vowel") return;
-				const clamped = Math.min(Math.max(freq, 100), 2000);
-				if (selectedVowelIdRef.current !== "custom") {
-					setSelectedVowelId("custom");
-				}
-				setManualVowelF1(clamped);
-			} else if (draggingTarget === "vowelF2") {
-				if (trainingModeRef.current !== "vowel") return;
-				const clamped = Math.min(Math.max(freq, 300), 4000);
-				if (selectedVowelIdRef.current !== "custom") {
-					setSelectedVowelId("custom");
-				}
-				setManualVowelF2(clamped);
-			}
-		};
-
-		const handlePointerUp = () => {
-			draggingTarget = null;
-		};
+		const handlePointerUp = (_event: PointerEvent) => {};
 
 		spectrumCanvas.addEventListener("pointerdown", handlePointerDown);
 		historyCanvas.addEventListener("pointerdown", handleHistoryPointerDown);
@@ -612,7 +532,7 @@ export default function App() {
 		};
 
 		const calcFormants = () => {
-			if (isFrozenRef.current) return;
+			if (isFrozenRef.current || !analysisRunningRef.current) return;
 			const analyser = analyserRef.current;
 			const dataArray = dataArrayRef.current;
 			const worker = workerRef.current;
@@ -640,14 +560,22 @@ export default function App() {
 			const ctx = spectrumCanvas.getContext("2d");
 			if (!ctx) return;
 
-			if (isFrozenRef.current) {
-				rafSpectrumRef.current = requestAnimationFrame(drawSpectrum);
+			if (isFrozenRef.current || !analysisRunningRef.current) {
+				rafSpectrumRef.current = null;
 				return;
 			}
 
+			const styles = getComputedStyle(document.body);
+			const canvasBg =
+				styles.getPropertyValue("--canvas-bg").trim() || "#f7f3ec";
+			const canvasGrid =
+				styles.getPropertyValue("--canvas-grid").trim() || "#c7bcad";
+			const canvasText =
+				styles.getPropertyValue("--canvas-text").trim() || "#5e5247";
+
 			analyser.getFloatTimeDomainData(dataArray);
 			ctx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
-			ctx.fillStyle = "#f7f3ec";
+			ctx.fillStyle = canvasBg;
 			ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
 
 			const { minFrequency, maxFrequency, logRange } = freqBoundsRef.current;
@@ -694,7 +622,7 @@ export default function App() {
 			}
 
 			const labelCount = 16;
-			ctx.fillStyle = "#5e5247";
+			ctx.fillStyle = canvasText;
 			ctx.font = "16px 'Soehne', 'Inter', sans-serif";
 			ctx.textAlign = "center";
 			ctx.textBaseline = "top";
@@ -707,7 +635,7 @@ export default function App() {
 				ctx.beginPath();
 				ctx.moveTo(x, spectrumCanvas.height);
 				ctx.lineTo(x, spectrumCanvas.height - 8);
-				ctx.strokeStyle = "#c7bcad";
+				ctx.strokeStyle = canvasGrid;
 				ctx.lineWidth = 1;
 				ctx.stroke();
 				ctx.fillText(`${Math.round(freq)} Hz`, x, spectrumCanvas.height - 22);
@@ -730,8 +658,8 @@ export default function App() {
 			const frequencyToPosition = (freq: number) =>
 				((Math.log10(freq) - logMin) / logRange) * spectrumCanvas.width;
 
-			if (isFrozenRef.current) {
-				rafLpcRef.current = requestAnimationFrame(drawLPCFilter);
+			if (isFrozenRef.current || !analysisRunningRef.current) {
+				rafLpcRef.current = null;
 				return;
 			}
 
@@ -840,18 +768,27 @@ export default function App() {
 			const ctx = canvas.getContext("2d");
 			if (!ctx) return;
 
-			if (isFrozenRef.current) {
-				rafHistoryRef.current = requestAnimationFrame(drawFormantHistory);
+			if (isFrozenRef.current || !analysisRunningRef.current) {
+				rafHistoryRef.current = null;
 				return;
 			}
 
 			ctx.clearRect(0, 0, canvas.width, canvas.height);
-			ctx.fillStyle = "#f7f3ec";
+			const styles = getComputedStyle(document.body);
+			const canvasBg =
+				styles.getPropertyValue("--canvas-bg").trim() || "#f7f3ec";
+			const canvasGrid =
+				styles.getPropertyValue("--canvas-grid").trim() || "#d7ccbe";
+			const canvasText =
+				styles.getPropertyValue("--canvas-text").trim() || "#5e5247";
+
+			ctx.fillStyle = canvasBg;
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-			const now = performance.now();
 			const timeWindow = 5000;
-			const minTime = now - timeWindow;
+			const latestTime =
+				history.length > 0 ? history[history.length - 1].time : 0;
+			const minTime = Math.max(0, latestTime - timeWindow);
 			const minFreq = 0;
 			const maxFreq = 3000;
 			const width = canvas.width;
@@ -868,8 +805,8 @@ export default function App() {
 			const numFreqTicks = 5;
 
 			ctx.save();
-			ctx.strokeStyle = "#d7ccbe";
-			ctx.fillStyle = "#5e5247";
+			ctx.strokeStyle = canvasGrid;
+			ctx.fillStyle = canvasText;
 			ctx.font = "16px 'Soehne', 'Inter', sans-serif";
 
 			for (let i = 0; i <= numTimeTicks; i += 1) {
@@ -925,6 +862,59 @@ export default function App() {
 			rafHistoryRef.current = requestAnimationFrame(drawFormantHistory);
 		};
 
+		function stopAnalysisLoops() {
+			analysisRunningRef.current = false;
+			if (formantIntervalRef.current !== null) {
+				clearInterval(formantIntervalRef.current);
+				formantIntervalRef.current = null;
+			}
+			if (rafSpectrumRef.current !== null) {
+				cancelAnimationFrame(rafSpectrumRef.current);
+				rafSpectrumRef.current = null;
+			}
+			if (rafLpcRef.current !== null) {
+				cancelAnimationFrame(rafLpcRef.current);
+				rafLpcRef.current = null;
+			}
+			if (rafHistoryRef.current !== null) {
+				cancelAnimationFrame(rafHistoryRef.current);
+				rafHistoryRef.current = null;
+			}
+		}
+
+		function startAnalysisLoops() {
+			if (isFrozenRef.current) {
+				analysisRunningRef.current = false;
+				return;
+			}
+			analysisRunningRef.current = true;
+			if (formantIntervalRef.current === null) {
+				formantIntervalRef.current = window.setInterval(calcFormants, 100);
+			}
+			if (rafSpectrumRef.current === null) {
+				rafSpectrumRef.current = requestAnimationFrame(drawSpectrum);
+			}
+			if (rafLpcRef.current === null) {
+				rafLpcRef.current = requestAnimationFrame(drawLPCFilter);
+			}
+			if (rafHistoryRef.current === null) {
+				rafHistoryRef.current = requestAnimationFrame(drawFormantHistory);
+			}
+		}
+
+		function toggleAnalysisFreeze() {
+			const nextFrozen = !isFrozenRef.current;
+			isFrozenRef.current = nextFrozen;
+			setIsFrozen(nextFrozen);
+			if (nextFrozen) {
+				stopAnalysisLoops();
+				void audioContextRef.current?.suspend().catch(() => {});
+			} else {
+				void audioContextRef.current?.resume().catch(() => {});
+				startAnalysisLoops();
+			}
+		}
+
 		const setup = async () => {
 			try {
 				resize();
@@ -964,10 +954,7 @@ export default function App() {
 					const message = event.data;
 					if (message.type === "init") {
 						if (message.status === "success") {
-							formantIntervalRef.current = window.setInterval(
-								calcFormants,
-								100,
-							);
+							startAnalysisLoops();
 						} else {
 							setError("Failed to initialize formant worker");
 						}
@@ -986,7 +973,6 @@ export default function App() {
 						const [f1, f2, f3, f4] = message.formants;
 						setFormants({ f0: message.pitch, f1, f2, f3, f4 });
 						addFormantsToHistory({
-							time: performance.now(),
 							f0: message.pitch,
 							f1,
 							f2,
@@ -1002,9 +988,6 @@ export default function App() {
 				};
 
 				worker.postMessage({ type: "init" } satisfies WorkerRequest);
-				rafSpectrumRef.current = requestAnimationFrame(drawSpectrum);
-				rafLpcRef.current = requestAnimationFrame(drawLPCFilter);
-				rafHistoryRef.current = requestAnimationFrame(drawFormantHistory);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				setError(message);
@@ -1021,11 +1004,7 @@ export default function App() {
 			);
 			window.removeEventListener("pointermove", handlePointerMove);
 			window.removeEventListener("pointerup", handlePointerUp);
-			if (rafSpectrumRef.current) cancelAnimationFrame(rafSpectrumRef.current);
-			if (rafLpcRef.current) cancelAnimationFrame(rafLpcRef.current);
-			if (rafHistoryRef.current) cancelAnimationFrame(rafHistoryRef.current);
-			if (formantIntervalRef.current !== null)
-				clearInterval(formantIntervalRef.current);
+			stopAnalysisLoops();
 			if (workerRef.current) workerRef.current.terminate();
 			stopCurrentInput();
 			if (audioContextRef.current) audioContextRef.current.close();
@@ -1293,6 +1272,15 @@ export default function App() {
 						<span>Formant markers</span>
 					</label>
 				</div>
+				<button
+					type="button"
+					className="action-button"
+					onClick={() =>
+						setTheme((current) => (current === "light" ? "dark" : "light"))
+					}
+				>
+					{theme === "light" ? "Switch to dark" : "Switch to light"}
+				</button>
 			</section>
 
 			<section className="metric input-card">
