@@ -334,7 +334,6 @@ export default function App() {
 	const [fileError, setFileError] = useState<string | null>(null);
 	const [filePosition, setFilePosition] = useState(0);
 	const [isScrubbing, setIsScrubbing] = useState(false);
-	const [trainerOpen, setTrainerOpen] = useState(false);
 	const [debugPanelOpen, setDebugPanelOpen] = useState(false);
 	const [debugInfo, setDebugInfo] = useState<DebugInfo>({
 		windowSize: null,
@@ -1565,7 +1564,7 @@ export default function App() {
 				return hasLoadedFile ? "File ready" : "Choose mic or file";
 		}
 	})();
-	const currentLpcPreset =
+	const _currentLpcPreset =
 		LPC_PRESETS.find((preset) => preset.id === lpcPresetId) ?? LPC_PRESETS[0];
 
 	return (
@@ -1625,14 +1624,34 @@ export default function App() {
 						/>
 						<span>LPC envelope</span>
 					</label>
-					<label className="toggle">
-						<input
-							type="checkbox"
-							checked={showFormants}
-							onChange={(e) => setShowFormants(e.target.checked)}
-						/>
-						<span>Formant markers</span>
-					</label>
+					<details className="advanced-toggle">
+						<summary>Advanced</summary>
+						<div className="advanced-body">
+							<label className="toggle small">
+								<input
+									type="checkbox"
+									checked={showFormants}
+									onChange={(e) => setShowFormants(e.target.checked)}
+								/>
+								<span>Formant markers</span>
+							</label>
+							<label className="toggle small">
+								<span>LPC preset</span>
+								<select
+									value={lpcPresetId}
+									onChange={(event) =>
+										setLpcPresetId(event.target.value as LpcPresetId)
+									}
+								>
+									{LPC_PRESETS.map((preset) => (
+										<option key={preset.id} value={preset.id}>
+											{preset.label}
+										</option>
+									))}
+								</select>
+							</label>
+						</div>
+					</details>
 				</div>
 			</section>
 
@@ -1651,26 +1670,6 @@ export default function App() {
 				<div className="metric">
 					<div className="label">F2</div>
 					<div className="value">{formants.f2.toFixed(0)} Hz</div>
-				</div>
-				<div className="metric">
-					<div className="label">LPC preset</div>
-					<div className="value">
-						<select
-							value={lpcPresetId}
-							onChange={(event) =>
-								setLpcPresetId(event.target.value as LpcPresetId)
-							}
-						>
-							{LPC_PRESETS.map((preset) => (
-								<option key={preset.id} value={preset.id}>
-									{preset.label}
-								</option>
-							))}
-						</select>
-					</div>
-					<div className="status-sub">
-						{`Order ${currentLpcPreset.formantOrder}, ×${currentLpcPreset.downsampleFactor}`}
-					</div>
 				</div>
 			</section>
 
@@ -1766,180 +1765,172 @@ export default function App() {
 				</section>
 
 				<section className="trainer">
-				<div className="metric trainer-card">
-					<div className="trainer-header">
-						<div>
+					<div className="metric trainer-card">
+						<div className="trainer-header">
 							<div className="label">Target trainer</div>
-							<div className="status-sub">
-								Optional practice view for pitch or vowels.
-							</div>
+							<button
+								type="button"
+								className="action-button"
+								onClick={() =>
+									setTrainingMode((current) =>
+										current === "off" ? "pitch" : "off",
+									)
+								}
+							>
+								{trainingMode === "off" ? "Open trainer" : "Close"}
+							</button>
 						</div>
-						<button
-							type="button"
-							className="action-button"
-							onClick={() => setTrainerOpen((open) => !open)}
-						>
-							{trainerOpen ? "Hide" : "Show"}
-						</button>
-					</div>
 
-					{trainerOpen ? (
-						<>
-							<div className="trainer-modes">
-								<button
-									type="button"
-									className={trainingMode === "off" ? "active" : ""}
-									onClick={() => setTrainingMode("off")}
-								>
-									Off
-								</button>
-								<button
-									type="button"
-									className={trainingMode === "pitch" ? "active" : ""}
-									onClick={() => setTrainingMode("pitch")}
-								>
-									Pitch
-								</button>
-								<button
-									type="button"
-									className={trainingMode === "vowel" ? "active" : ""}
-									onClick={() => setTrainingMode("vowel")}
-								>
-									Vowel
-								</button>
-							</div>
+						{trainingMode === "off" ? (
+							<p className="trainer-hint">
+								Practice matching your pitch or vowel targets against the live
+								signal.
+							</p>
+						) : (
+							<>
+								<div className="trainer-modes">
+									<button
+										type="button"
+										className={trainingMode === "pitch" ? "active" : ""}
+										onClick={() => setTrainingMode("pitch")}
+									>
+										Pitch
+									</button>
+									<button
+										type="button"
+										className={trainingMode === "vowel" ? "active" : ""}
+										onClick={() => setTrainingMode("vowel")}
+									>
+										Vowel
+									</button>
+								</div>
 
-							{trainingMode === "pitch" ? (
-								<div className="trainer-body">
-									<label className="trainer-field">
-										<span>Target note</span>
-										<select
-											value={selectedPitchId}
-											onChange={(event) =>
-												setSelectedPitchId(event.target.value)
-											}
-										>
-											{PITCH_TARGETS.map((target) => (
-												<option key={target.id} value={target.id}>
-													{target.label}
-												</option>
-											))}
-											<option value="custom">Custom (Hz)</option>
-										</select>
-									</label>
-									{selectedPitchId === "custom" ? (
+								{trainingMode === "pitch" ? (
+									<div className="trainer-body">
 										<label className="trainer-field">
-											<span>Custom F0</span>
-											<input
-												type="number"
-												min={40}
-												max={2000}
-												value={manualPitchHz}
-												onChange={(event) => {
-													const next = Number.parseFloat(event.target.value);
-													if (Number.isFinite(next)) {
-														setManualPitchHz(next);
-													}
-												}}
-											/>
-											<span>Hz</span>
+											<span>Target note</span>
+											<select
+												value={selectedPitchId}
+												onChange={(event) =>
+													setSelectedPitchId(event.target.value)
+												}
+											>
+												{PITCH_TARGETS.map((target) => (
+													<option key={target.id} value={target.id}>
+														{target.label}
+													</option>
+												))}
+												<option value="custom">Custom (Hz)</option>
+											</select>
 										</label>
-									) : null}
-									<div className="trainer-readout">
-										<span>Target {pitchTargetLabel}</span>
-										<span>Current {formants.f0.toFixed(0)} Hz</span>
-										<span>
-											Δ{" "}
-											{pitchDiffHz !== null
-												? `${pitchDeltaLabel} (${pitchDirectionLabel})`
-												: "—"}
-										</span>
-									</div>
-								</div>
-							) : null}
-
-							{trainingMode === "vowel" ? (
-								<div className="trainer-body">
-									<label className="trainer-field">
-										<span>Target vowel</span>
-										<select
-											value={selectedVowelId}
-											onChange={(event) =>
-												setSelectedVowelId(event.target.value)
-											}
-										>
-											{VOWEL_TARGETS.map((target) => (
-												<option key={target.id} value={target.id}>
-													{target.label} – {target.example}
-												</option>
-											))}
-											<option value="custom">Custom F1/F2</option>
-										</select>
-									</label>
-									{selectedVowelId === "custom" ? (
-										<div className="trainer-body">
+										{selectedPitchId === "custom" ? (
 											<label className="trainer-field">
-												<span>Custom F1</span>
+												<span>Custom F0</span>
 												<input
 													type="number"
-													min={100}
+													min={40}
 													max={2000}
-													value={manualVowelF1}
+													value={manualPitchHz}
 													onChange={(event) => {
 														const next = Number.parseFloat(
 															event.target.value,
 														);
 														if (Number.isFinite(next)) {
-															setManualVowelF1(next);
+															setManualPitchHz(next);
 														}
 													}}
 												/>
 												<span>Hz</span>
 											</label>
-											<label className="trainer-field">
-												<span>Custom F2</span>
-												<input
-													type="number"
-													min={300}
-													max={4000}
-													value={manualVowelF2}
-													onChange={(event) => {
-														const next = Number.parseFloat(
-															event.target.value,
-														);
-														if (Number.isFinite(next)) {
-															setManualVowelF2(next);
-														}
-													}}
-												/>
-												<span>Hz</span>
-											</label>
+										) : null}
+										<div className="trainer-readout">
+											<span>Target {pitchTargetLabel}</span>
+											<span>Current {formants.f0.toFixed(0)} Hz</span>
+											<span>
+												Δ{" "}
+												{pitchDiffHz !== null
+													? `${pitchDeltaLabel} (${pitchDirectionLabel})`
+													: "—"}
+											</span>
 										</div>
-									) : null}
-									<div className="trainer-readout">
-										<span>Target F1/F2 {vowelTargetDisplay}</span>
-										<span>
-											Current F1/F2{" "}
-											{formants.f1 > 0 && formants.f2 > 0
-												? `${formants.f1.toFixed(
-														0,
-													)} Hz / ${formants.f2.toFixed(0)} Hz`
-												: "—"}
-										</span>
-										<span>{vowelSummary}</span>
 									</div>
-								</div>
-							) : null}
+								) : null}
 
-							{trainingMode === "off" ? (
-								<p className="trainer-hint">
-									Pick a pitch or vowel target to see how far your live signal
-									is from the goal.
-								</p>
-							) : null}
-						</>
-					) : null}
-				</div>
+								{trainingMode === "vowel" ? (
+									<div className="trainer-body">
+										<label className="trainer-field">
+											<span>Target vowel</span>
+											<select
+												value={selectedVowelId}
+												onChange={(event) =>
+													setSelectedVowelId(event.target.value)
+												}
+											>
+												{VOWEL_TARGETS.map((target) => (
+													<option key={target.id} value={target.id}>
+														{target.label} – {target.example}
+													</option>
+												))}
+												<option value="custom">Custom F1/F2</option>
+											</select>
+										</label>
+										{selectedVowelId === "custom" ? (
+											<div className="trainer-body">
+												<label className="trainer-field">
+													<span>Custom F1</span>
+													<input
+														type="number"
+														min={100}
+														max={2000}
+														value={manualVowelF1}
+														onChange={(event) => {
+															const next = Number.parseFloat(
+																event.target.value,
+															);
+															if (Number.isFinite(next)) {
+																setManualVowelF1(next);
+															}
+														}}
+													/>
+													<span>Hz</span>
+												</label>
+												<label className="trainer-field">
+													<span>Custom F2</span>
+													<input
+														type="number"
+														min={300}
+														max={4000}
+														value={manualVowelF2}
+														onChange={(event) => {
+															const next = Number.parseFloat(
+																event.target.value,
+															);
+															if (Number.isFinite(next)) {
+																setManualVowelF2(next);
+															}
+														}}
+													/>
+													<span>Hz</span>
+												</label>
+											</div>
+										) : null}
+										<div className="trainer-readout">
+											<span>Target F1/F2 {vowelTargetDisplay}</span>
+											<span>
+												Current F1/F2{" "}
+												{formants.f1 > 0 && formants.f2 > 0
+													? `${formants.f1.toFixed(
+															0,
+														)} Hz / ${formants.f2.toFixed(0)} Hz`
+													: "—"}
+											</span>
+											<span>{vowelSummary}</span>
+										</div>
+									</div>
+								) : null}
+							</>
+						)}
+					</div>
 				</section>
 
 			</section>
