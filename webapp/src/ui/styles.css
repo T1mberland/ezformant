@@ -439,6 +439,11 @@ body {
 	font-weight: 500;
 }
 
+.metric .value.small {
+	font-size: 16px;
+	font-weight: 500;
+}
+
 .metric .value select {
 	border-radius: 999px;
 	border: 1px solid var(--border);
@@ -705,6 +710,65 @@ body[data-theme="dark"] {
 	margin-top: 8px;
 	color: #b82020;
 	font-weight: 600;
+}
+
+.developer-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.developer-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.developer-body {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.developer-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+	gap: 8px;
+}
+
+.developer-stat .value.small {
+	font-size: 15px;
+}
+
+.developer-coeffs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 6px;
+	font-size: 12px;
+}
+
+.developer-coeffs code {
+	background: rgba(0, 0, 0, 0.04);
+	border-radius: 999px;
+	padding: 3px 8px;
+	font-family:
+		ui-monospace,
+		SFMono-Regular,
+		Menlo,
+		Monaco,
+		Consolas,
+		"Liberation Mono",
+		"Courier New",
+		monospace;
+}
+
+.developer-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 6px;
 }
 
 @media (max-width: 720px) {

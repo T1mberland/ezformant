@@ -68,6 +68,15 @@ type LpcPreset = {
 	downsampleFactor: number;
 };
 
+type DebugInfo = {
+	windowSize: number | null;
+	sampleRate: number | null;
+	frameIntervalMs: number;
+	windowDurationMs: number | null;
+	lastFrameComputeMs: number | null;
+	lpcCoefficients: number[] | null;
+};
+
 const FFT_SIZE = 2048;
 const MAX_HISTORY = 1000;
 const FORMANT_INTERVAL_MS = 100;
@@ -176,6 +185,122 @@ function formatDuration(seconds: number | null): string {
 	return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+function subtractMeanInPlace(data: Float64Array): void {
+	const n = data.length;
+	if (n === 0) return;
+	let sum = 0;
+	for (let i = 0; i < n; i += 1) {
+		sum += data[i];
+	}
+	const mean = sum / n;
+	for (let i = 0; i < n; i += 1) {
+		data[i] -= mean;
+	}
+}
+
+function applyHammingWindowInPlace(data: Float64Array): void {
+	const n = data.length;
+	if (n === 0) return;
+	const last = n - 1;
+	for (let i = 0; i < n; i += 1) {
+		const ratio = i / last;
+		const w = 0.54 - 0.46 * Math.cos(2 * Math.PI * ratio);
+		data[i] *= w;
+	}
+}
+
+function preEmphasizeInPlace(data: Float64Array, alpha: number): void {
+	const n = data.length;
+	if (n === 0) return;
+	let prev = data[0];
+	data[0] = (1 - alpha) * prev;
+	for (let i = 1; i < n; i += 1) {
+		const x = data[i];
+		data[i] = x - alpha * prev;
+		prev = x;
+	}
+}
+
+function preprocessSignalForLpc(data: Float64Array, alpha: number): void {
+	subtractMeanInPlace(data);
+	applyHammingWindowInPlace(data);
+	preEmphasizeInPlace(data, alpha);
+}
+
+function autocorrelateForLpc(
+	signal: Float64Array,
+	maxLag: number,
+): Float64Array {
+	const n = signal.length;
+	const result = new Float64Array(maxLag + 1);
+	for (let lag = 0; lag <= maxLag; lag += 1) {
+		let acc = 0;
+		for (let i = 0; i + lag < n; i += 1) {
+			acc += signal[i] * signal[i + lag];
+		}
+		result[lag] = acc;
+	}
+	return result;
+}
+
+function levinsonForLpc(order: number, r: Float64Array): number[] {
+	if (r.length < order + 1) {
+		throw new Error("autocorrelation too short for requested LPC order");
+	}
+	const a = new Float64Array(order + 1);
+	a[0] = 1;
+
+	let e = Math.abs(r[0]) < 1e-12 ? 1e-12 : r[0];
+
+	for (let i = 1; i <= order; i += 1) {
+		let acc = r[i];
+		for (let j = 1; j < i; j += 1) {
+			acc += a[j] * r[i - j];
+		}
+		const k = -acc / e;
+		const aNext = new Float64Array(a);
+		for (let j = 1; j < i; j += 1) {
+			aNext[j] = a[j] + k * a[i - j];
+		}
+		aNext[i] = k;
+		a.set(aNext);
+
+		e *= 1 - k * k;
+		if (e < 1e-12) e = 1e-12;
+	}
+
+	return Array.from(a);
+}
+
+function computeLpcCoefficientsForDebug(
+	input: Float32Array,
+	order: number,
+	downsampleFactor: number,
+): number[] {
+	if (!Number.isFinite(order) || order <= 0) return [];
+	if (downsampleFactor <= 0) downsampleFactor = 1;
+	if (input.length === 0) return [];
+
+	// Downsample to roughly match the Rust pipeline.
+	const downsampledLength = Math.max(
+		Math.ceil(input.length / downsampleFactor),
+		1,
+	);
+	const downsampled = new Float64Array(downsampledLength);
+	for (let i = 0, j = 0; i < input.length && j < downsampledLength; i += downsampleFactor, j += 1) {
+		downsampled[j] = input[i];
+	}
+
+	preprocessSignalForLpc(downsampled, 0.97);
+	const r = autocorrelateForLpc(downsampled, order);
+
+	try {
+		return levinsonForLpc(order, r);
+	} catch {
+		return [];
+	}
+}
+
 export default function App() {
 	const [activeView, setActiveView] = useState<"spectrum" | "history">(
 		"spectrum",
@@ -209,6 +334,16 @@ export default function App() {
 	const [fileError, setFileError] = useState<string | null>(null);
 	const [filePosition, setFilePosition] = useState(0);
 	const [isScrubbing, setIsScrubbing] = useState(false);
+	const [debugPanelOpen, setDebugPanelOpen] = useState(false);
+	const [debugInfo, setDebugInfo] = useState<DebugInfo>({
+		windowSize: null,
+		sampleRate: null,
+		frameIntervalMs: FORMANT_INTERVAL_MS,
+		windowDurationMs: null,
+		lastFrameComputeMs: null,
+		lpcCoefficients: null,
+	});
+	const [snapshotError, setSnapshotError] = useState<string | null>(null);
 
 	const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const historyCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -261,6 +396,7 @@ export default function App() {
 	const trainingModeRef = useRef<TrainingMode>("off");
 	const selectedPitchIdRef = useRef(selectedPitchId);
 	const selectedVowelIdRef = useRef(selectedVowelId);
+	const debugEnabledRef = useRef(false);
 
 	useEffect(() => {
 		showFFTSpectrumRef.current = showFFTSpectrum;
@@ -298,6 +434,9 @@ export default function App() {
 	useEffect(() => {
 		selectedVowelIdRef.current = selectedVowelId;
 	}, [selectedVowelId]);
+	useEffect(() => {
+		debugEnabledRef.current = debugPanelOpen;
+	}, [debugPanelOpen]);
 	useEffect(() => {
 		const preset =
 			LPC_PRESETS.find((candidate) => candidate.id === lpcPresetId) ??
@@ -581,8 +720,32 @@ export default function App() {
 			const worker = workerRef.current;
 			const audioContext = audioContextRef.current;
 			if (!analyser || !dataArray || !audioContext || !worker) return;
-			const { formantOrder, downsampleFactor } = lpcPresetRef.current;
 			analyser.getFloatTimeDomainData(dataArray);
+			const { formantOrder, downsampleFactor } = lpcPresetRef.current;
+
+			if (debugEnabledRef.current) {
+				const start = performance.now();
+				const coeffs = computeLpcCoefficientsForDebug(
+					dataArray,
+					formantOrder,
+					downsampleFactor,
+				);
+				const durationMs = performance.now() - start;
+				const windowSize = dataArray.length;
+				const sampleRate = audioContext.sampleRate;
+				const windowDurationMs = (windowSize / sampleRate) * 1000;
+
+				setDebugInfo((previous) => ({
+					...previous,
+					windowSize,
+					sampleRate,
+					frameIntervalMs: FORMANT_INTERVAL_MS,
+					windowDurationMs,
+					lastFrameComputeMs: durationMs,
+					lpcCoefficients: coeffs,
+				}));
+			}
+
 			const payload: WorkerRequest = {
 				type: "calcFormants",
 				data: {
@@ -987,6 +1150,18 @@ export default function App() {
 				dataArrayRef.current = new Float32Array(FFT_SIZE);
 				spectrumRef.current = new Float32Array(FFT_SIZE / 2);
 
+				setDebugInfo((previous) => {
+					const windowSize = FFT_SIZE;
+					const sampleRate = audioContext.sampleRate;
+					return {
+						...previous,
+						windowSize,
+						sampleRate,
+						frameIntervalMs: FORMANT_INTERVAL_MS,
+						windowDurationMs: (windowSize / sampleRate) * 1000,
+					};
+				});
+
 				const worker = new Worker(
 					new URL("../formantWorker.ts", import.meta.url),
 					{
@@ -1244,6 +1419,137 @@ export default function App() {
 			window.removeEventListener("keydown", onKeyDown);
 		};
 	}, [handleTogglePlay]);
+
+	const buildSnapshot = () => ({
+		version: 1,
+		createdAt: new Date().toISOString(),
+		settings: {
+			theme,
+			inputMode,
+			trainingMode,
+			lpcPresetId,
+			showFFTSpectrum,
+			showLPCSpectrum,
+			showFormants,
+			selectedPitchId,
+			manualPitchHz,
+			selectedVowelId,
+			manualVowelF1,
+			manualVowelF2,
+		},
+		stats: {
+			sampleRate: debugInfo.sampleRate,
+			windowSize: debugInfo.windowSize,
+			frameIntervalMs: debugInfo.frameIntervalMs,
+			windowDurationMs: debugInfo.windowDurationMs,
+			lastFrameComputeMs: debugInfo.lastFrameComputeMs,
+			formants,
+		},
+	});
+
+	const handleExportSnapshot = () => {
+		const snapshot = buildSnapshot();
+		const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+			type: "application/json",
+		});
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement("a");
+		link.href = url;
+		link.download = "ezformant-snapshot.json";
+		document.body.append(link);
+		link.click();
+		link.remove();
+		URL.revokeObjectURL(url);
+	};
+
+	const handleImportSnapshot = (event: ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0];
+		if (!file) return;
+		setSnapshotError(null);
+
+		const reader = new FileReader();
+		reader.onload = () => {
+			try {
+				const text = String(reader.result);
+				const parsed = JSON.parse(text) as {
+					version?: number;
+					settings?: {
+						theme?: string;
+						trainingMode?: TrainingMode;
+						lpcPresetId?: LpcPresetId;
+						showFFTSpectrum?: boolean;
+						showLPCSpectrum?: boolean;
+						showFormants?: boolean;
+						selectedPitchId?: string;
+						manualPitchHz?: number;
+						selectedVowelId?: string;
+						manualVowelF1?: number;
+						manualVowelF2?: number;
+					};
+				};
+
+				const snapshotSettings = parsed.settings ?? {};
+
+				if (snapshotSettings.theme === "light" || snapshotSettings.theme === "dark") {
+					setTheme(snapshotSettings.theme);
+				}
+				if (
+					snapshotSettings.trainingMode === "off" ||
+					snapshotSettings.trainingMode === "pitch" ||
+					snapshotSettings.trainingMode === "vowel"
+				) {
+					setTrainingMode(snapshotSettings.trainingMode);
+				}
+				if (
+					snapshotSettings.lpcPresetId === "speech" ||
+					snapshotSettings.lpcPresetId === "singer" ||
+					snapshotSettings.lpcPresetId === "noisy"
+				) {
+					setLpcPresetId(snapshotSettings.lpcPresetId);
+				}
+				if (typeof snapshotSettings.showFFTSpectrum === "boolean") {
+					setShowFFTSpectrum(snapshotSettings.showFFTSpectrum);
+				}
+				if (typeof snapshotSettings.showLPCSpectrum === "boolean") {
+					setShowLPCSpectrum(snapshotSettings.showLPCSpectrum);
+				}
+				if (typeof snapshotSettings.showFormants === "boolean") {
+					setShowFormants(snapshotSettings.showFormants);
+				}
+				if (typeof snapshotSettings.selectedPitchId === "string") {
+					setSelectedPitchId(snapshotSettings.selectedPitchId);
+				}
+				if (
+					typeof snapshotSettings.manualPitchHz === "number" &&
+					Number.isFinite(snapshotSettings.manualPitchHz)
+				) {
+					setManualPitchHz(snapshotSettings.manualPitchHz);
+				}
+				if (typeof snapshotSettings.selectedVowelId === "string") {
+					setSelectedVowelId(snapshotSettings.selectedVowelId);
+				}
+				if (
+					typeof snapshotSettings.manualVowelF1 === "number" &&
+					Number.isFinite(snapshotSettings.manualVowelF1)
+				) {
+					setManualVowelF1(snapshotSettings.manualVowelF1);
+				}
+				if (
+					typeof snapshotSettings.manualVowelF2 === "number" &&
+					Number.isFinite(snapshotSettings.manualVowelF2)
+				) {
+					setManualVowelF2(snapshotSettings.manualVowelF2);
+				}
+			} catch {
+				setSnapshotError("Could not parse snapshot JSON file.");
+			}
+		};
+		reader.onerror = () => {
+			setSnapshotError("Could not read snapshot file.");
+		};
+		reader.readAsText(file);
+		event.target.value = "";
+	};
 
 	const hasLoadedFile = fileBufferRef.current !== null;
 	const micReady = micStreamRef.current !== null;
@@ -1634,6 +1940,110 @@ export default function App() {
 						</p>
 					) : null}
 				</div>
+			</section>
+
+			<section className="metric developer-panel">
+				<div className="developer-header">
+					<div>
+						<div className="label">Developer / diagnostics</div>
+						<div className="status-sub">
+							Inspect LPC internals and export/import JSON snapshots.
+						</div>
+					</div>
+					<button
+						type="button"
+						className="action-button"
+						onClick={() => setDebugPanelOpen((open) => !open)}
+					>
+						{debugPanelOpen ? "Hide debug panel" : "Show debug panel"}
+					</button>
+				</div>
+				{debugPanelOpen ? (
+					<div className="developer-body">
+						<div className="developer-grid">
+							<div className="developer-stat">
+								<div className="label">Sample rate</div>
+								<div className="value small">
+									{debugInfo.sampleRate
+										? `${debugInfo.sampleRate.toFixed(0)} Hz`
+										: "—"}
+								</div>
+							</div>
+							<div className="developer-stat">
+								<div className="label">Window size</div>
+								<div className="value small">
+									{debugInfo.windowSize
+										? `${debugInfo.windowSize} samples`
+										: "—"}
+								</div>
+							</div>
+							<div className="developer-stat">
+								<div className="label">Window duration</div>
+								<div className="value small">
+									{debugInfo.windowDurationMs
+										? `${debugInfo.windowDurationMs.toFixed(1)} ms`
+										: "—"}
+								</div>
+							</div>
+							<div className="developer-stat">
+								<div className="label">Analysis interval</div>
+								<div className="value small">
+									{`${debugInfo.frameIntervalMs.toFixed(0)} ms`}
+								</div>
+							</div>
+							<div className="developer-stat">
+								<div className="label">Last LPC compute</div>
+								<div className="value small">
+									{debugInfo.lastFrameComputeMs
+										? `${debugInfo.lastFrameComputeMs.toFixed(2)} ms`
+										: "—"}
+								</div>
+							</div>
+						</div>
+						<div className="developer-section">
+							<div className="label">LPC coefficients</div>
+							<div className="developer-coeffs">
+								{debugInfo.lpcCoefficients &&
+								debugInfo.lpcCoefficients.length > 0 ? (
+									debugInfo.lpcCoefficients.map((coef, index) => {
+										const label = `a${index}`;
+										return (
+											<code key={label}>{`${label}=${coef.toFixed(4)}`}</code>
+										);
+									})
+								) : (
+									<span className="status-sub">
+										No coefficients yet – keep this panel open while audio is
+										running.
+									</span>
+								)}
+							</div>
+						</div>
+						<div className="developer-section">
+							<div className="label">Snapshots</div>
+							<div className="developer-actions">
+								<button
+									type="button"
+									className="action-button"
+									onClick={handleExportSnapshot}
+								>
+									Export JSON snapshot
+								</button>
+								<label className="upload-label action-button">
+									<input
+										type="file"
+										accept="application/json,.json"
+										onChange={handleImportSnapshot}
+									/>
+									<span>Import JSON snapshot</span>
+								</label>
+							</div>
+							{snapshotError ? (
+								<div className="error-inline">{snapshotError}</div>
+							) : null}
+						</div>
+					</div>
+				) : null}
 			</section>
 
 			<div className="canvas-shell">

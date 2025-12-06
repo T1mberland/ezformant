@@ -35,5 +35,5 @@ Pedagogical / practice tools
 Developer/diagnostic
 --------------------
 
-- [ ]  Debug panel showing LPC coefficients, window size, sample rate, and timing (ms per frame).
-- [ ]  Export/import JSON snapshots of settings and basic statistics for reproducible bug reports or experiments.
+- [x]  Debug panel showing LPC coefficients, window size, sample rate, and timing (ms per frame).
+- [x]  Export/import JSON snapshots of settings and basic statistics for reproducible bug reports or experiments.
