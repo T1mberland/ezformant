@@ -615,7 +615,7 @@ export default function App() {
 
 			const labelCount = 16;
 			ctx.fillStyle = "#5e5247";
-			ctx.font = `${12 / window.devicePixelRatio}px 'Soehne', 'Inter', sans-serif`;
+			ctx.font = "14px 'Soehne', 'Inter', sans-serif";
 			ctx.textAlign = "center";
 			ctx.textBaseline = "top";
 
@@ -790,7 +790,7 @@ export default function App() {
 			ctx.save();
 			ctx.strokeStyle = "#d7ccbe";
 			ctx.fillStyle = "#5e5247";
-			ctx.font = `${12 / window.devicePixelRatio}px 'Soehne', 'Inter', sans-serif`;
+			ctx.font = "14px 'Soehne', 'Inter', sans-serif";
 
 			for (let i = 0; i <= numTimeTicks; i += 1) {
 				const fraction = i / numTimeTicks;
