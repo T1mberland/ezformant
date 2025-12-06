@@ -4,8 +4,8 @@ Ideas for future EZ Formant development
 Visual & UX
 -----------
 
-- [x] Dark mode
-- [ ] Snap-to-vowel overlays on the F1/F2 history plot (ellipses for canonical /i, e, a, o, u/ regions).
+- [x]  Dark mode
+- [ ]  Snap-to-vowel overlays on the F1/F2 history plot (ellipses for canonical /i, e, a, o, u/ regions).
 - [ ]  “Hold to analyze” mode: only record/compute formants while a mouse button or key is held.
 - [ ]  Screenshot/export buttons for spectrum and history views (PNG/SVG).
 - [x]  Tap to pause/resume live analysis.
@@ -28,7 +28,7 @@ Analysis features
 Pedagogical / practice tools
 ----------------------------
 
-- [x] Target trainer: pick a target vowel or pitch+formant combo and show live deviation.
+- [x]  Target trainer: pick a target vowel or pitch+formant combo and show live deviation.
 - [ ]  History bookmarks to label segments (e.g., first vs. second syllable) and toggle between them.
 - [ ]  Support for scripted sessions: predefined sequences of sounds with per-token summaries of F0 and formants.
 
