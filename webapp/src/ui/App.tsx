@@ -1608,25 +1608,25 @@ export default function App() {
 				</div>
 				<div className="toggles">
 					{isFrozen ? <span className="badge frozen-badge">Frozen</span> : null}
-					<label className="toggle">
-						<input
-							type="checkbox"
-							checked={showFFTSpectrum}
-							onChange={(e) => setShowFFTSpectrum(e.target.checked)}
-						/>
-						<span>FFT spectrum</span>
-					</label>
-					<label className="toggle">
-						<input
-							type="checkbox"
-							checked={showLPCSpectrum}
-							onChange={(e) => setShowLPCSpectrum(e.target.checked)}
-						/>
-						<span>LPC envelope</span>
-					</label>
 					<details className="advanced-toggle">
 						<summary>Advanced</summary>
 						<div className="advanced-body">
+							<label className="toggle small">
+								<input
+									type="checkbox"
+									checked={showFFTSpectrum}
+									onChange={(e) => setShowFFTSpectrum(e.target.checked)}
+								/>
+								<span>FFT spectrum</span>
+							</label>
+							<label className="toggle small">
+								<input
+									type="checkbox"
+									checked={showLPCSpectrum}
+									onChange={(e) => setShowLPCSpectrum(e.target.checked)}
+								/>
+								<span>LPC envelope</span>
+							</label>
 							<label className="toggle small">
 								<input
 									type="checkbox"
