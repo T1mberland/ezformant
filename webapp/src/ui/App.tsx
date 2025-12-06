@@ -57,11 +57,28 @@ type PitchTarget = {
 
 type InputMode = "mic" | "file";
 
+type LpcPresetId = "speech" | "singer" | "noisy";
+
+type LpcPreset = {
+	id: LpcPresetId;
+	label: string;
+	description: string;
+	formantOrder: number;
+	spectrumOrder: number;
+	downsampleFactor: number;
+};
+
+type DebugInfo = {
+	windowSize: number | null;
+	sampleRate: number | null;
+	frameIntervalMs: number;
+	windowDurationMs: number | null;
+	lastFrameComputeMs: number | null;
+	lpcCoefficients: number[] | null;
+};
+
 const FFT_SIZE = 2048;
 const MAX_HISTORY = 1000;
-const FORMANT_ORDER = 14;
-const LPC_SPECTRUM_ORDER = 16;
-const DOWNSAMPLE_FACTOR = 4;
 const FORMANT_INTERVAL_MS = 100;
 const NOTE_NAMES = [
 	"C",
@@ -125,6 +142,33 @@ const PITCH_TARGETS: PitchTarget[] = [
 	{ id: "A4", label: "A4 (440 Hz)", freq: 440 },
 ];
 
+const LPC_PRESETS: LpcPreset[] = [
+	{
+		id: "speech",
+		label: "Speech (default)",
+		description: "Balanced for typical spoken vowels.",
+		formantOrder: 14,
+		spectrumOrder: 16,
+		downsampleFactor: 4,
+	},
+	{
+		id: "singer",
+		label: "Singer (detailed)",
+		description: "Higher order, less downsampling for rich harmonics.",
+		formantOrder: 18,
+		spectrumOrder: 20,
+		downsampleFactor: 2,
+	},
+	{
+		id: "noisy",
+		label: "Noisy (robust)",
+		description: "Smoother response for noisy environments.",
+		formantOrder: 10,
+		spectrumOrder: 12,
+		downsampleFactor: 6,
+	},
+];
+
 function frequencyToNoteName(freq: number): string {
 	if (!Number.isFinite(freq) || freq <= 0) return "—";
 	const midi = Math.round(69 + 12 * Math.log2(freq / 440));
@@ -139,6 +183,122 @@ function formatDuration(seconds: number | null): string {
 	const mins = Math.floor(wholeSeconds / 60);
 	const secs = wholeSeconds % 60;
 	return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+function subtractMeanInPlace(data: Float64Array): void {
+	const n = data.length;
+	if (n === 0) return;
+	let sum = 0;
+	for (let i = 0; i < n; i += 1) {
+		sum += data[i];
+	}
+	const mean = sum / n;
+	for (let i = 0; i < n; i += 1) {
+		data[i] -= mean;
+	}
+}
+
+function applyHammingWindowInPlace(data: Float64Array): void {
+	const n = data.length;
+	if (n === 0) return;
+	const last = n - 1;
+	for (let i = 0; i < n; i += 1) {
+		const ratio = i / last;
+		const w = 0.54 - 0.46 * Math.cos(2 * Math.PI * ratio);
+		data[i] *= w;
+	}
+}
+
+function preEmphasizeInPlace(data: Float64Array, alpha: number): void {
+	const n = data.length;
+	if (n === 0) return;
+	let prev = data[0];
+	data[0] = (1 - alpha) * prev;
+	for (let i = 1; i < n; i += 1) {
+		const x = data[i];
+		data[i] = x - alpha * prev;
+		prev = x;
+	}
+}
+
+function preprocessSignalForLpc(data: Float64Array, alpha: number): void {
+	subtractMeanInPlace(data);
+	applyHammingWindowInPlace(data);
+	preEmphasizeInPlace(data, alpha);
+}
+
+function autocorrelateForLpc(
+	signal: Float64Array,
+	maxLag: number,
+): Float64Array {
+	const n = signal.length;
+	const result = new Float64Array(maxLag + 1);
+	for (let lag = 0; lag <= maxLag; lag += 1) {
+		let acc = 0;
+		for (let i = 0; i + lag < n; i += 1) {
+			acc += signal[i] * signal[i + lag];
+		}
+		result[lag] = acc;
+	}
+	return result;
+}
+
+function levinsonForLpc(order: number, r: Float64Array): number[] {
+	if (r.length < order + 1) {
+		throw new Error("autocorrelation too short for requested LPC order");
+	}
+	const a = new Float64Array(order + 1);
+	a[0] = 1;
+
+	let e = Math.abs(r[0]) < 1e-12 ? 1e-12 : r[0];
+
+	for (let i = 1; i <= order; i += 1) {
+		let acc = r[i];
+		for (let j = 1; j < i; j += 1) {
+			acc += a[j] * r[i - j];
+		}
+		const k = -acc / e;
+		const aNext = new Float64Array(a);
+		for (let j = 1; j < i; j += 1) {
+			aNext[j] = a[j] + k * a[i - j];
+		}
+		aNext[i] = k;
+		a.set(aNext);
+
+		e *= 1 - k * k;
+		if (e < 1e-12) e = 1e-12;
+	}
+
+	return Array.from(a);
+}
+
+function computeLpcCoefficientsForDebug(
+	input: Float32Array,
+	order: number,
+	downsampleFactor: number,
+): number[] {
+	if (!Number.isFinite(order) || order <= 0) return [];
+	if (downsampleFactor <= 0) downsampleFactor = 1;
+	if (input.length === 0) return [];
+
+	// Downsample to roughly match the Rust pipeline.
+	const downsampledLength = Math.max(
+		Math.ceil(input.length / downsampleFactor),
+		1,
+	);
+	const downsampled = new Float64Array(downsampledLength);
+	for (let i = 0, j = 0; i < input.length && j < downsampledLength; i += downsampleFactor, j += 1) {
+		downsampled[j] = input[i];
+	}
+
+	preprocessSignalForLpc(downsampled, 0.97);
+	const r = autocorrelateForLpc(downsampled, order);
+
+	try {
+		return levinsonForLpc(order, r);
+	} catch {
+		return [];
+	}
 }
 
 export default function App() {
@@ -165,6 +325,7 @@ export default function App() {
 	const [isFrozen, setIsFrozen] = useState(false);
 	const [inputMode, setInputMode] = useState<InputMode>("mic");
 	const [theme, setTheme] = useState<"light" | "dark">("light");
+	const [lpcPresetId, setLpcPresetId] = useState<LpcPresetId>("speech");
 	const [fileStatus, setFileStatus] = useState<
 		"idle" | "loading" | "playing" | "paused" | "ended" | "error"
 	>("idle");
@@ -173,6 +334,21 @@ export default function App() {
 	const [fileError, setFileError] = useState<string | null>(null);
 	const [filePosition, setFilePosition] = useState(0);
 	const [isScrubbing, setIsScrubbing] = useState(false);
+	const [debugPanelOpen, setDebugPanelOpen] = useState(false);
+	const [debugInfo, setDebugInfo] = useState<DebugInfo>({
+		windowSize: null,
+		sampleRate: null,
+		frameIntervalMs: FORMANT_INTERVAL_MS,
+		windowDurationMs: null,
+		lastFrameComputeMs: null,
+		lpcCoefficients: null,
+	});
+	const [snapshotError, setSnapshotError] = useState<string | null>(null);
+	const [showDeveloperUi] = useState(
+		() =>
+			typeof window !== "undefined" &&
+			new URLSearchParams(window.location.search).has("dev"),
+	);
 
 	const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const historyCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -202,12 +378,12 @@ export default function App() {
 	const startMicInputRef = useRef<() => Promise<void> | null>(null);
 	const startFilePlaybackRef =
 		useRef<(file: File) => Promise<void> | null>(null);
-	const replayFileRef = useRef<(() => void) | null>(null);
 	const filePlaybackStartRef = useRef<number | null>(null);
 	const fileProgressRafRef = useRef<number | null>(null);
 	const fileStatusRef = useRef(fileStatus);
 	const isScrubbingRef = useRef(isScrubbing);
 	const filePositionRef = useRef(0);
+	const lpcPresetRef = useRef<LpcPreset>(LPC_PRESETS[0]);
 	const startBufferPlaybackRef = useRef<
 		((buffer: AudioBuffer, offset?: number) => Promise<void>) | null
 	>(null);
@@ -224,6 +400,7 @@ export default function App() {
 	const trainingModeRef = useRef<TrainingMode>("off");
 	const selectedPitchIdRef = useRef(selectedPitchId);
 	const selectedVowelIdRef = useRef(selectedVowelId);
+	const debugEnabledRef = useRef(false);
 
 	useEffect(() => {
 		showFFTSpectrumRef.current = showFFTSpectrum;
@@ -261,6 +438,15 @@ export default function App() {
 	useEffect(() => {
 		selectedVowelIdRef.current = selectedVowelId;
 	}, [selectedVowelId]);
+	useEffect(() => {
+		debugEnabledRef.current = debugPanelOpen;
+	}, [debugPanelOpen]);
+	useEffect(() => {
+		const preset =
+			LPC_PRESETS.find((candidate) => candidate.id === lpcPresetId) ??
+			LPC_PRESETS[0];
+		lpcPresetRef.current = preset;
+	}, [lpcPresetId]);
 	useEffect(() => {
 		// Default to mic mode on load so the "Use mic" control is selected.
 		setInputMode("mic");
@@ -524,12 +710,6 @@ export default function App() {
 			}
 		};
 		startFilePlaybackRef.current = startFilePlayback;
-		replayFileRef.current = () => {
-			const buffer = fileBufferRef.current;
-			if (buffer) {
-				void startBufferPlayback(buffer, 0);
-			}
-		};
 
 		const calcFormants = () => {
 			if (isFrozenRef.current || !analysisRunningRef.current) return;
@@ -539,13 +719,38 @@ export default function App() {
 			const audioContext = audioContextRef.current;
 			if (!analyser || !dataArray || !audioContext || !worker) return;
 			analyser.getFloatTimeDomainData(dataArray);
+			const { formantOrder, downsampleFactor } = lpcPresetRef.current;
+
+			if (debugEnabledRef.current) {
+				const start = performance.now();
+				const coeffs = computeLpcCoefficientsForDebug(
+					dataArray,
+					formantOrder,
+					downsampleFactor,
+				);
+				const durationMs = performance.now() - start;
+				const windowSize = dataArray.length;
+				const sampleRate = audioContext.sampleRate;
+				const windowDurationMs = (windowSize / sampleRate) * 1000;
+
+				setDebugInfo((previous) => ({
+					...previous,
+					windowSize,
+					sampleRate,
+					frameIntervalMs: FORMANT_INTERVAL_MS,
+					windowDurationMs,
+					lastFrameComputeMs: durationMs,
+					lpcCoefficients: coeffs,
+				}));
+			}
+
 			const payload: WorkerRequest = {
 				type: "calcFormants",
 				data: {
 					audioData: Array.from(dataArray),
-					lpcOrder: FORMANT_ORDER,
+					lpcOrder: formantOrder,
 					sampleRate: audioContext.sampleRate,
-					downsampleFactor: DOWNSAMPLE_FACTOR,
+					downsampleFactor,
 				},
 			};
 			worker.postMessage(payload);
@@ -666,11 +871,12 @@ export default function App() {
 			if (showLPCSpectrumRef.current) {
 				analyser.getFloatTimeDomainData(dataArray);
 				const graphSize = 1024;
+				const { spectrumOrder, downsampleFactor } = lpcPresetRef.current;
 				const freqResponse = wasm.lpc_filter_freq_response_with_downsampling(
 					Float64Array.from(dataArray),
-					LPC_SPECTRUM_ORDER,
+					spectrumOrder,
 					audioContextRef.current?.sampleRate ?? 44100,
-					DOWNSAMPLE_FACTOR,
+					downsampleFactor,
 					graphSize,
 				);
 
@@ -682,7 +888,7 @@ export default function App() {
 				let started = false;
 
 				for (let i = 0; i < graphSize; i += 1) {
-					const freq = (i * maxFrequency) / graphSize / DOWNSAMPLE_FACTOR;
+					const freq = (i * maxFrequency) / graphSize / downsampleFactor;
 					if (freq < minFrequency) continue;
 
 					const xPos = frequencyToPosition(freq);
@@ -942,6 +1148,18 @@ export default function App() {
 				dataArrayRef.current = new Float32Array(FFT_SIZE);
 				spectrumRef.current = new Float32Array(FFT_SIZE / 2);
 
+				setDebugInfo((previous) => {
+					const windowSize = FFT_SIZE;
+					const sampleRate = audioContext.sampleRate;
+					return {
+						...previous,
+						windowSize,
+						sampleRate,
+						frameIntervalMs: FORMANT_INTERVAL_MS,
+						windowDurationMs: (windowSize / sampleRate) * 1000,
+					};
+				});
+
 				const worker = new Worker(
 					new URL("../formantWorker.ts", import.meta.url),
 					{
@@ -970,10 +1188,17 @@ export default function App() {
 						if (isFrozenRef.current) {
 							return;
 						}
-						const [f1, f2, f3, f4] = message.formants;
-						setFormants({ f0: message.pitch, f1, f2, f3, f4 });
+						const [rawF1, rawF2, rawF3, rawF4] = message.formants;
+						const sanitize = (value: number | undefined) =>
+							Number.isFinite(value) && value > 0 ? value : 0;
+						const f0 = sanitize(message.pitch);
+						const f1 = sanitize(rawF1);
+						const f2 = sanitize(rawF2);
+						const f3 = sanitize(rawF3);
+						const f4 = sanitize(rawF4);
+						setFormants({ f0, f1, f2, f3, f4 });
 						addFormantsToHistory({
-							f0: message.pitch,
+							f0,
 							f1,
 							f2,
 							f3,
@@ -1110,12 +1335,6 @@ export default function App() {
 		}
 	};
 
-	const handleReplayFile = () => {
-		if (replayFileRef.current) {
-			replayFileRef.current();
-		}
-	};
-
 	const handleScrubStart = () => {
 		setIsScrubbing(true);
 		isScrubbingRef.current = true;
@@ -1193,6 +1412,137 @@ export default function App() {
 		};
 	}, [handleTogglePlay]);
 
+	const buildSnapshot = () => ({
+		version: 1,
+		createdAt: new Date().toISOString(),
+		settings: {
+			theme,
+			inputMode,
+			trainingMode,
+			lpcPresetId,
+			showFFTSpectrum,
+			showLPCSpectrum,
+			showFormants,
+			selectedPitchId,
+			manualPitchHz,
+			selectedVowelId,
+			manualVowelF1,
+			manualVowelF2,
+		},
+		stats: {
+			sampleRate: debugInfo.sampleRate,
+			windowSize: debugInfo.windowSize,
+			frameIntervalMs: debugInfo.frameIntervalMs,
+			windowDurationMs: debugInfo.windowDurationMs,
+			lastFrameComputeMs: debugInfo.lastFrameComputeMs,
+			formants,
+		},
+	});
+
+	const handleExportSnapshot = () => {
+		const snapshot = buildSnapshot();
+		const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+			type: "application/json",
+		});
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement("a");
+		link.href = url;
+		link.download = "ezformant-snapshot.json";
+		document.body.append(link);
+		link.click();
+		link.remove();
+		URL.revokeObjectURL(url);
+	};
+
+	const handleImportSnapshot = (event: ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0];
+		if (!file) return;
+		setSnapshotError(null);
+
+		const reader = new FileReader();
+		reader.onload = () => {
+			try {
+				const text = String(reader.result);
+				const parsed = JSON.parse(text) as {
+					version?: number;
+					settings?: {
+						theme?: string;
+						trainingMode?: TrainingMode;
+						lpcPresetId?: LpcPresetId;
+						showFFTSpectrum?: boolean;
+						showLPCSpectrum?: boolean;
+						showFormants?: boolean;
+						selectedPitchId?: string;
+						manualPitchHz?: number;
+						selectedVowelId?: string;
+						manualVowelF1?: number;
+						manualVowelF2?: number;
+					};
+				};
+
+				const snapshotSettings = parsed.settings ?? {};
+
+				if (snapshotSettings.theme === "light" || snapshotSettings.theme === "dark") {
+					setTheme(snapshotSettings.theme);
+				}
+				if (
+					snapshotSettings.trainingMode === "off" ||
+					snapshotSettings.trainingMode === "pitch" ||
+					snapshotSettings.trainingMode === "vowel"
+				) {
+					setTrainingMode(snapshotSettings.trainingMode);
+				}
+				if (
+					snapshotSettings.lpcPresetId === "speech" ||
+					snapshotSettings.lpcPresetId === "singer" ||
+					snapshotSettings.lpcPresetId === "noisy"
+				) {
+					setLpcPresetId(snapshotSettings.lpcPresetId);
+				}
+				if (typeof snapshotSettings.showFFTSpectrum === "boolean") {
+					setShowFFTSpectrum(snapshotSettings.showFFTSpectrum);
+				}
+				if (typeof snapshotSettings.showLPCSpectrum === "boolean") {
+					setShowLPCSpectrum(snapshotSettings.showLPCSpectrum);
+				}
+				if (typeof snapshotSettings.showFormants === "boolean") {
+					setShowFormants(snapshotSettings.showFormants);
+				}
+				if (typeof snapshotSettings.selectedPitchId === "string") {
+					setSelectedPitchId(snapshotSettings.selectedPitchId);
+				}
+				if (
+					typeof snapshotSettings.manualPitchHz === "number" &&
+					Number.isFinite(snapshotSettings.manualPitchHz)
+				) {
+					setManualPitchHz(snapshotSettings.manualPitchHz);
+				}
+				if (typeof snapshotSettings.selectedVowelId === "string") {
+					setSelectedVowelId(snapshotSettings.selectedVowelId);
+				}
+				if (
+					typeof snapshotSettings.manualVowelF1 === "number" &&
+					Number.isFinite(snapshotSettings.manualVowelF1)
+				) {
+					setManualVowelF1(snapshotSettings.manualVowelF1);
+				}
+				if (
+					typeof snapshotSettings.manualVowelF2 === "number" &&
+					Number.isFinite(snapshotSettings.manualVowelF2)
+				) {
+					setManualVowelF2(snapshotSettings.manualVowelF2);
+				}
+			} catch {
+				setSnapshotError("Could not parse snapshot JSON file.");
+			}
+		};
+		reader.onerror = () => {
+			setSnapshotError("Could not read snapshot file.");
+		};
+		reader.readAsText(file);
+		event.target.value = "";
+	};
+
 	const hasLoadedFile = fileBufferRef.current !== null;
 	const micReady = micStreamRef.current !== null;
 	const fileStatusLabel = (() => {
@@ -1214,6 +1564,8 @@ export default function App() {
 				return hasLoadedFile ? "File ready" : "Choose mic or file";
 		}
 	})();
+	const _currentLpcPreset =
+		LPC_PRESETS.find((preset) => preset.id === lpcPresetId) ?? LPC_PRESETS[0];
 
 	return (
 		<div className="page">
@@ -1226,6 +1578,15 @@ export default function App() {
 						+ WASM.
 					</p>
 				</div>
+				<button
+					type="button"
+					className="action-button"
+					onClick={() =>
+						setTheme((current) => (current === "light" ? "dark" : "light"))
+					}
+				>
+					{theme === "light" ? "Switch to dark" : "Switch to light"}
+				</button>
 			</header>
 
 			<section className="controls">
@@ -1247,139 +1608,50 @@ export default function App() {
 				</div>
 				<div className="toggles">
 					{isFrozen ? <span className="badge frozen-badge">Frozen</span> : null}
-					<label className="toggle">
-						<input
-							type="checkbox"
-							checked={showFFTSpectrum}
-							onChange={(e) => setShowFFTSpectrum(e.target.checked)}
-						/>
-						<span>FFT spectrum</span>
-					</label>
-					<label className="toggle">
-						<input
-							type="checkbox"
-							checked={showLPCSpectrum}
-							onChange={(e) => setShowLPCSpectrum(e.target.checked)}
-						/>
-						<span>LPC envelope</span>
-					</label>
-					<label className="toggle">
-						<input
-							type="checkbox"
-							checked={showFormants}
-							onChange={(e) => setShowFormants(e.target.checked)}
-						/>
-						<span>Formant markers</span>
-					</label>
-				</div>
-				<button
-					type="button"
-					className="action-button"
-					onClick={() =>
-						setTheme((current) => (current === "light" ? "dark" : "light"))
-					}
-				>
-					{theme === "light" ? "Switch to dark" : "Switch to light"}
-				</button>
-			</section>
-
-			<section className="metric input-card">
-				<div className="input-header">
-					<div>
-						<div className="label">Input source</div>
-						<p className="input-hint">
-							Analyze live mic or load a WAV/MP3/OGG file (local only).
-						</p>
-					</div>
-					<div className="input-actions">
-						<button
-							type="button"
-							className={`action-button ${inputMode === "mic" ? "primary" : ""}`}
-							onClick={handleUseMic}
-							disabled={fileStatus === "loading"}
-						>
-							Use mic
-						</button>
-						<label
-							className={`upload-label action-button ${
-								fileStatus === "loading" ? "disabled" : ""
-							}`}
-						>
-							<input
-								type="file"
-								accept="audio/*"
-								onChange={handleFileSelect}
-								disabled={fileStatus === "loading"}
-							/>
-							<span>
-								{fileStatus === "loading" ? "Loading…" : "Pick audio"}
-							</span>
-						</label>
-						<button
-							type="button"
-							className="action-button"
-							onClick={handleReplayFile}
-							disabled={!hasLoadedFile || fileStatus === "loading"}
-						>
-							Replay file
-						</button>
-						<button
-							type="button"
-							className="action-button"
-							onClick={handleTogglePlay}
-							disabled={
-								!hasLoadedFile ||
-								fileStatus === "loading" ||
-								fileStatus === "error"
-							}
-						>
-							{fileStatus === "playing" ? "Pause" : "Play"}
-						</button>
-					</div>
-				</div>
-				<div className="input-status">
-					<div className={`status-pill ${fileStatus}`}>{fileStatusLabel}</div>
-					<div className="status-details">
-						<div className="status-line">
-							{inputMode === "mic"
-								? micReady
-									? "Listening to your microphone (on-device only)."
-									: "Click “Use mic” to start live analysis."
-								: fileName
-									? `File: ${fileName}`
-									: "No file selected yet."}
-						</div>
-						{inputMode === "file" && fileDuration ? (
-							<div className="status-sub">
-								Duration {formatDuration(fileDuration)}
-							</div>
-						) : null}
-						{fileError ? <div className="error-inline">{fileError}</div> : null}
-						{inputMode === "file" && hasLoadedFile && fileDuration ? (
-							<div className="scrub-row">
+					<details className="advanced-toggle">
+						<summary>Advanced</summary>
+						<div className="advanced-body">
+							<label className="toggle small">
 								<input
-									type="range"
-									min={0}
-									max={fileDuration}
-									step={0.01}
-									value={
-										isScrubbing
-											? filePosition
-											: Math.min(filePosition, fileDuration)
-									}
-									onMouseDown={handleScrubStart}
-									onTouchStart={handleScrubStart}
-									onChange={handleScrubChange}
-									onMouseUp={handleScrubEnd}
-									onTouchEnd={handleScrubEnd}
+									type="checkbox"
+									checked={showFFTSpectrum}
+									onChange={(e) => setShowFFTSpectrum(e.target.checked)}
 								/>
-								<div className="scrub-times">
-									<span>{formatDuration(filePosition)}</span>
-									<span>{formatDuration(fileDuration)}</span>
-								</div>
-							</div>
-						) : null}
-					</div>
+								<span>FFT spectrum</span>
+							</label>
+							<label className="toggle small">
+								<input
+									type="checkbox"
+									checked={showLPCSpectrum}
+									onChange={(e) => setShowLPCSpectrum(e.target.checked)}
+								/>
+								<span>LPC envelope</span>
+							</label>
+							<label className="toggle small">
+								<input
+									type="checkbox"
+									checked={showFormants}
+									onChange={(e) => setShowFormants(e.target.checked)}
+								/>
+								<span>Formant markers</span>
+							</label>
+							<label className="toggle small">
+								<span>LPC preset</span>
+								<select
+									value={lpcPresetId}
+									onChange={(event) =>
+										setLpcPresetId(event.target.value as LpcPresetId)
+									}
+								>
+									{LPC_PRESETS.map((preset) => (
+										<option key={preset.id} value={preset.id}>
+											{preset.label}
+										</option>
+									))}
+								</select>
+							</label>
+						</div>
+					</details>
 				</div>
 			</section>
 
@@ -1399,167 +1671,377 @@ export default function App() {
 					<div className="label">F2</div>
 					<div className="value">{formants.f2.toFixed(0)} Hz</div>
 				</div>
-				<div className="metric">
-					<div className="label">F3</div>
-					<div className="value">{formants.f3.toFixed(0)} Hz</div>
-				</div>
-				<div className="metric">
-					<div className="label">F4</div>
-					<div className="value">{formants.f4.toFixed(0)} Hz</div>
-				</div>
 			</section>
 
-			<section className="trainer">
-				<div className="metric trainer-card">
-					<div className="trainer-header">
-						<div className="label">Target trainer</div>
-						<div className="trainer-modes">
+			<section className="panels-row">
+				<section className="metric input-card">
+					<div className="input-header">
+						<div>
+							<div className="label">Input source</div>
+							<p className="input-hint">Use mic or a local audio file.</p>
+						</div>
+						<div className="input-actions">
 							<button
 								type="button"
-								className={trainingMode === "off" ? "active" : ""}
-								onClick={() => setTrainingMode("off")}
+								className={`action-button ${inputMode === "mic" ? "primary" : ""}`}
+								onClick={handleUseMic}
+								disabled={fileStatus === "loading"}
 							>
-								Off
+								Use mic
 							</button>
+							<label
+								className={`upload-label action-button ${
+									fileStatus === "loading" ? "disabled" : ""
+								}`}
+							>
+								<input
+									type="file"
+									accept="audio/*"
+									onChange={handleFileSelect}
+									disabled={fileStatus === "loading"}
+								/>
+								<span>
+									{fileStatus === "loading" ? "Loading…" : "Pick audio"}
+								</span>
+							</label>
 							<button
 								type="button"
-								className={trainingMode === "pitch" ? "active" : ""}
-								onClick={() => setTrainingMode("pitch")}
+								className="action-button"
+								onClick={handleTogglePlay}
+								disabled={
+									!hasLoadedFile ||
+									fileStatus === "loading" ||
+									fileStatus === "error"
+								}
 							>
-								Pitch
-							</button>
-							<button
-								type="button"
-								className={trainingMode === "vowel" ? "active" : ""}
-								onClick={() => setTrainingMode("vowel")}
-							>
-								Vowel
+								{fileStatus === "playing" ? "Pause" : "Play"}
 							</button>
 						</div>
 					</div>
-
-					{trainingMode === "pitch" ? (
-						<div className="trainer-body">
-							<label className="trainer-field">
-								<span>Target note</span>
-								<select
-									value={selectedPitchId}
-									onChange={(event) => setSelectedPitchId(event.target.value)}
-								>
-									{PITCH_TARGETS.map((target) => (
-										<option key={target.id} value={target.id}>
-											{target.label}
-										</option>
-									))}
-									<option value="custom">Custom (Hz)</option>
-								</select>
-							</label>
-							{selectedPitchId === "custom" ? (
-								<label className="trainer-field">
-									<span>Custom F0</span>
-									<input
-										type="number"
-										min={40}
-										max={2000}
-										value={manualPitchHz}
-										onChange={(event) => {
-											const next = Number.parseFloat(event.target.value);
-											if (Number.isFinite(next)) {
-												setManualPitchHz(next);
-											}
-										}}
-									/>
-									<span>Hz</span>
-								</label>
-							) : null}
-							<div className="trainer-readout">
-								<span>Target {pitchTargetLabel}</span>
-								<span>Current {formants.f0.toFixed(0)} Hz</span>
-								<span>
-									Δ{" "}
-									{pitchDiffHz !== null
-										? `${pitchDeltaLabel} (${pitchDirectionLabel})`
-										: "—"}
-								</span>
+					<div className="input-status">
+						<div className={`status-pill ${fileStatus}`}>{fileStatusLabel}</div>
+						<div className="status-details compact">
+							<div className="status-line">
+								{inputMode === "mic"
+									? micReady
+										? "Live microphone."
+										: "Click “Use mic” to start."
+									: fileName || "No file selected."}
 							</div>
-						</div>
-					) : null}
-
-					{trainingMode === "vowel" ? (
-						<div className="trainer-body">
-							<label className="trainer-field">
-								<span>Target vowel</span>
-								<select
-									value={selectedVowelId}
-									onChange={(event) => setSelectedVowelId(event.target.value)}
-								>
-									{VOWEL_TARGETS.map((target) => (
-										<option key={target.id} value={target.id}>
-											{target.label} – {target.example}
-										</option>
-									))}
-									<option value="custom">Custom F1/F2</option>
-								</select>
-							</label>
-							{selectedVowelId === "custom" ? (
-								<div className="trainer-body">
-									<label className="trainer-field">
-										<span>Custom F1</span>
-										<input
-											type="number"
-											min={100}
-											max={2000}
-											value={manualVowelF1}
-											onChange={(event) => {
-												const next = Number.parseFloat(event.target.value);
-												if (Number.isFinite(next)) {
-													setManualVowelF1(next);
-												}
-											}}
-										/>
-										<span>Hz</span>
-									</label>
-									<label className="trainer-field">
-										<span>Custom F2</span>
-										<input
-											type="number"
-											min={300}
-											max={4000}
-											value={manualVowelF2}
-											onChange={(event) => {
-												const next = Number.parseFloat(event.target.value);
-												if (Number.isFinite(next)) {
-													setManualVowelF2(next);
-												}
-											}}
-										/>
-										<span>Hz</span>
-									</label>
+							{inputMode === "file" && fileDuration ? (
+								<div className="status-sub">
+									{formatDuration(fileDuration)} total
 								</div>
 							) : null}
-							<div className="trainer-readout">
-								<span>Target F1/F2 {vowelTargetDisplay}</span>
-								<span>
-									Current F1/F2{" "}
-									{formants.f1 > 0 && formants.f2 > 0
-										? `${formants.f1.toFixed(
-												0,
-											)} Hz / ${formants.f2.toFixed(0)} Hz`
-										: "—"}
-								</span>
-								<span>{vowelSummary}</span>
+							{fileError ? (
+								<div className="error-inline">{fileError}</div>
+							) : null}
+							{inputMode === "file" && hasLoadedFile && fileDuration ? (
+								<div className="scrub-row">
+									<input
+										type="range"
+										min={0}
+										max={fileDuration}
+										step={0.01}
+										value={
+											isScrubbing
+												? filePosition
+												: Math.min(filePosition, fileDuration)
+										}
+										onMouseDown={handleScrubStart}
+										onTouchStart={handleScrubStart}
+										onChange={handleScrubChange}
+										onMouseUp={handleScrubEnd}
+										onTouchEnd={handleScrubEnd}
+									/>
+									<div className="scrub-times">
+										<span>{formatDuration(filePosition)}</span>
+										<span>{formatDuration(fileDuration)}</span>
+									</div>
+								</div>
+							) : null}
+						</div>
+					</div>
+				</section>
+
+				<section className="trainer">
+					<div className="metric trainer-card">
+						<div className="trainer-header">
+							<div className="label">Target trainer</div>
+							<button
+								type="button"
+								className="action-button"
+								onClick={() =>
+									setTrainingMode((current) =>
+										current === "off" ? "pitch" : "off",
+									)
+								}
+							>
+								{trainingMode === "off" ? "Open trainer" : "Close"}
+							</button>
+						</div>
+
+						{trainingMode === "off" ? (
+							<p className="trainer-hint">
+								Practice matching your pitch or vowel targets against the live
+								signal.
+							</p>
+						) : (
+							<>
+								<div className="trainer-modes">
+									<button
+										type="button"
+										className={trainingMode === "pitch" ? "active" : ""}
+										onClick={() => setTrainingMode("pitch")}
+									>
+										Pitch
+									</button>
+									<button
+										type="button"
+										className={trainingMode === "vowel" ? "active" : ""}
+										onClick={() => setTrainingMode("vowel")}
+									>
+										Vowel
+									</button>
+								</div>
+
+								{trainingMode === "pitch" ? (
+									<div className="trainer-body">
+										<label className="trainer-field">
+											<span>Target note</span>
+											<select
+												value={selectedPitchId}
+												onChange={(event) =>
+													setSelectedPitchId(event.target.value)
+												}
+											>
+												{PITCH_TARGETS.map((target) => (
+													<option key={target.id} value={target.id}>
+														{target.label}
+													</option>
+												))}
+												<option value="custom">Custom (Hz)</option>
+											</select>
+										</label>
+										{selectedPitchId === "custom" ? (
+											<label className="trainer-field">
+												<span>Custom F0</span>
+												<input
+													type="number"
+													min={40}
+													max={2000}
+													value={manualPitchHz}
+													onChange={(event) => {
+														const next = Number.parseFloat(
+															event.target.value,
+														);
+														if (Number.isFinite(next)) {
+															setManualPitchHz(next);
+														}
+													}}
+												/>
+												<span>Hz</span>
+											</label>
+										) : null}
+										<div className="trainer-readout">
+											<span>Target {pitchTargetLabel}</span>
+											<span>Current {formants.f0.toFixed(0)} Hz</span>
+											<span>
+												Δ{" "}
+												{pitchDiffHz !== null
+													? `${pitchDeltaLabel} (${pitchDirectionLabel})`
+													: "—"}
+											</span>
+										</div>
+									</div>
+								) : null}
+
+								{trainingMode === "vowel" ? (
+									<div className="trainer-body">
+										<label className="trainer-field">
+											<span>Target vowel</span>
+											<select
+												value={selectedVowelId}
+												onChange={(event) =>
+													setSelectedVowelId(event.target.value)
+												}
+											>
+												{VOWEL_TARGETS.map((target) => (
+													<option key={target.id} value={target.id}>
+														{target.label} – {target.example}
+													</option>
+												))}
+												<option value="custom">Custom F1/F2</option>
+											</select>
+										</label>
+										{selectedVowelId === "custom" ? (
+											<div className="trainer-body">
+												<label className="trainer-field">
+													<span>Custom F1</span>
+													<input
+														type="number"
+														min={100}
+														max={2000}
+														value={manualVowelF1}
+														onChange={(event) => {
+															const next = Number.parseFloat(
+																event.target.value,
+															);
+															if (Number.isFinite(next)) {
+																setManualVowelF1(next);
+															}
+														}}
+													/>
+													<span>Hz</span>
+												</label>
+												<label className="trainer-field">
+													<span>Custom F2</span>
+													<input
+														type="number"
+														min={300}
+														max={4000}
+														value={manualVowelF2}
+														onChange={(event) => {
+															const next = Number.parseFloat(
+																event.target.value,
+															);
+															if (Number.isFinite(next)) {
+																setManualVowelF2(next);
+															}
+														}}
+													/>
+													<span>Hz</span>
+												</label>
+											</div>
+										) : null}
+										<div className="trainer-readout">
+											<span>Target F1/F2 {vowelTargetDisplay}</span>
+											<span>
+												Current F1/F2{" "}
+												{formants.f1 > 0 && formants.f2 > 0
+													? `${formants.f1.toFixed(
+															0,
+														)} Hz / ${formants.f2.toFixed(0)} Hz`
+													: "—"}
+											</span>
+											<span>{vowelSummary}</span>
+										</div>
+									</div>
+								) : null}
+							</>
+						)}
+					</div>
+				</section>
+
+			</section>
+
+			{showDeveloperUi ? (
+				<section className="metric developer-panel">
+					<div className="developer-header">
+						<div>
+							<div className="label">Developer / diagnostics</div>
+							<div className="status-sub">
+								Inspect LPC internals and export/import JSON snapshots.
+							</div>
+						</div>
+						<button
+							type="button"
+							className="action-button"
+							onClick={() => setDebugPanelOpen((open) => !open)}
+						>
+							{debugPanelOpen ? "Hide debug panel" : "Show debug panel"}
+						</button>
+					</div>
+					{debugPanelOpen ? (
+						<div className="developer-body">
+							<div className="developer-grid">
+								<div className="developer-stat">
+									<div className="label">Sample rate</div>
+									<div className="value small">
+										{debugInfo.sampleRate
+											? `${debugInfo.sampleRate.toFixed(0)} Hz`
+											: "—"}
+									</div>
+								</div>
+								<div className="developer-stat">
+									<div className="label">Window size</div>
+									<div className="value small">
+										{debugInfo.windowSize
+											? `${debugInfo.windowSize} samples`
+											: "—"}
+									</div>
+								</div>
+								<div className="developer-stat">
+									<div className="label">Window duration</div>
+									<div className="value small">
+										{debugInfo.windowDurationMs
+											? `${debugInfo.windowDurationMs.toFixed(1)} ms`
+											: "—"}
+									</div>
+								</div>
+								<div className="developer-stat">
+									<div className="label">Analysis interval</div>
+									<div className="value small">
+										{`${debugInfo.frameIntervalMs.toFixed(0)} ms`}
+									</div>
+								</div>
+								<div className="developer-stat">
+									<div className="label">Last LPC compute</div>
+									<div className="value small">
+										{debugInfo.lastFrameComputeMs
+											? `${debugInfo.lastFrameComputeMs.toFixed(2)} ms`
+											: "—"}
+									</div>
+								</div>
+							</div>
+							<div className="developer-section">
+								<div className="label">LPC coefficients</div>
+								<div className="developer-coeffs">
+									{debugInfo.lpcCoefficients &&
+									debugInfo.lpcCoefficients.length > 0 ? (
+										debugInfo.lpcCoefficients.map((coef, index) => {
+											const label = `a${index}`;
+											return (
+												<code key={label}>{`${label}=${coef.toFixed(
+													4,
+												)}`}</code>
+											);
+										})
+									) : (
+										<span className="status-sub">
+											No coefficients yet – keep this panel open while audio is
+											running.
+										</span>
+									)}
+								</div>
+							</div>
+							<div className="developer-section">
+								<div className="label">Snapshots</div>
+								<div className="developer-actions">
+									<button
+										type="button"
+										className="action-button"
+										onClick={handleExportSnapshot}
+									>
+										Export JSON snapshot
+									</button>
+									<label className="upload-label action-button">
+										<input
+											type="file"
+											accept="application/json,.json"
+											onChange={handleImportSnapshot}
+										/>
+										<span>Import JSON snapshot</span>
+									</label>
+								</div>
+								{snapshotError ? (
+									<div className="error-inline">{snapshotError}</div>
+								) : null}
 							</div>
 						</div>
 					) : null}
-
-					{trainingMode === "off" ? (
-						<p className="trainer-hint">
-							Pick a pitch or vowel target to see how far your live signal is
-							from the goal.
-						</p>
-					) : null}
-				</div>
-			</section>
+				</section>
+			) : null}
 
 			<div className="canvas-shell">
 				<canvas

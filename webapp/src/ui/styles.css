@@ -212,6 +212,11 @@ body {
 	font-size: 13px;
 }
 
+.status-details.compact {
+	gap: 2px;
+	font-size: 12px;
+}
+
 .status-line {
 	color: var(--text);
 	font-weight: 600;
@@ -321,20 +326,78 @@ body {
 	background: rgba(255, 255, 255, 0.03);
 }
 
+.toggle.small {
+	padding: 4px 8px;
+	font-size: 12px;
+}
+
+.advanced-toggle {
+	border-radius: 10px;
+	border: 1px solid var(--border);
+	background: var(--panel);
+	padding: 4px 8px;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.advanced-toggle summary {
+	list-style: none;
+}
+
+.advanced-toggle summary::marker {
+	display: none;
+}
+
+.advanced-toggle summary::-webkit-details-marker {
+	display: none;
+}
+
+.advanced-toggle summary {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.advanced-toggle .advanced-body {
+	margin-top: 6px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
 .readout {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 	gap: 10px;
 }
 
+.panels-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+	gap: 10px;
+	align-items: stretch;
+}
+
 .trainer {
-	margin-top: 8px;
+	margin-top: 0;
+	height: 100%;
 }
 
 .trainer-card {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
+	height: 100%;
+}
+
+.panels-row > .metric.input-card {
+	height: 100%;
+}
+
+@media (max-width: 900px) {
+	.panels-row {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 .trainer-header {
@@ -437,6 +500,24 @@ body {
 	color: var(--accent-2);
 	font-size: 14px;
 	font-weight: 500;
+}
+
+.metric .value.small {
+	font-size: 16px;
+	font-weight: 500;
+}
+
+.metric .value select {
+	border-radius: 999px;
+	border: 1px solid var(--border);
+	padding: 4px 10px;
+	font-size: 13px;
+	background: #fffdf9;
+	color: var(--text);
+}
+
+body[data-theme="dark"] .metric .value select {
+	background: #282828;
 }
 
 .canvas-shell {
@@ -692,6 +773,65 @@ body[data-theme="dark"] {
 	margin-top: 8px;
 	color: #b82020;
 	font-weight: 600;
+}
+
+.developer-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.developer-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.developer-body {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.developer-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+	gap: 8px;
+}
+
+.developer-stat .value.small {
+	font-size: 15px;
+}
+
+.developer-coeffs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 6px;
+	font-size: 12px;
+}
+
+.developer-coeffs code {
+	background: rgba(0, 0, 0, 0.04);
+	border-radius: 999px;
+	padding: 3px 8px;
+	font-family:
+		ui-monospace,
+		SFMono-Regular,
+		Menlo,
+		Monaco,
+		Consolas,
+		"Liberation Mono",
+		"Courier New",
+		monospace;
+}
+
+.developer-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 6px;
 }
 
 @media (max-width: 720px) {
