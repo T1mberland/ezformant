@@ -12,7 +12,7 @@ Audio & recording
 -----------------
 
 - [ ]  Record/playback mode for short clips so users can scrub spectrum/history without live mic.
-- [ ]  Support loading a local audio file (e.g., WAV/OGG) for offline analysis.
+- [x]  Support loading a local audio file (e.g., WAV/OGG) for offline analysis.
 - [ ]  Simple input level meter and noise gate to avoid analyzing silence/background noise.
 
 Analysis features
