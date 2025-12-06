@@ -163,6 +163,8 @@ export default function App() {
 	const [fileName, setFileName] = useState("");
 	const [fileDuration, setFileDuration] = useState<number | null>(null);
 	const [fileError, setFileError] = useState<string | null>(null);
+	const [filePosition, setFilePosition] = useState(0);
+	const [isScrubbing, setIsScrubbing] = useState(false);
 
 	const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const historyCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -192,6 +194,10 @@ export default function App() {
 	const startFilePlaybackRef =
 		useRef<(file: File) => Promise<void> | null>(null);
 	const replayFileRef = useRef<(() => void) | null>(null);
+	const filePlaybackStartRef = useRef<number | null>(null);
+	const fileProgressRafRef = useRef<number | null>(null);
+	const fileStatusRef = useRef(fileStatus);
+	const isScrubbingRef = useRef(isScrubbing);
 
 	const showFFTSpectrumRef = useRef(showFFTSpectrum);
 	const showLPCSpectrumRef = useRef(showLPCSpectrum);
@@ -222,6 +228,12 @@ export default function App() {
 		isFrozenRef.current = isFrozen;
 	}, [isFrozen]);
 	useEffect(() => {
+		fileStatusRef.current = fileStatus;
+	}, [fileStatus]);
+	useEffect(() => {
+		isScrubbingRef.current = isScrubbing;
+	}, [isScrubbing]);
+	useEffect(() => {
 		trainingModeRef.current = trainingMode;
 	}, [trainingMode]);
 	useEffect(() => {
@@ -237,6 +249,7 @@ export default function App() {
 		setFileError(null);
 		setFileName("");
 		setFileDuration(null);
+		setFilePosition(0);
 	}, []);
 
 	useEffect(() => {
@@ -256,6 +269,12 @@ export default function App() {
 			window.removeEventListener("keydown", startOnGesture);
 		};
 	}, [inputMode]);
+	useEffect(() => {
+		if (fileStatus === "ended" && fileProgressRafRef.current !== null) {
+			cancelAnimationFrame(fileProgressRafRef.current);
+			fileProgressRafRef.current = null;
+		}
+	}, [fileStatus]);
 	useEffect(() => {
 		let pitchTarget: number | null = null;
 		if (trainingMode === "pitch") {
@@ -427,6 +446,10 @@ export default function App() {
 		window.addEventListener("pointerup", handlePointerUp);
 
 		const stopCurrentInput = () => {
+			if (fileProgressRafRef.current !== null) {
+				cancelAnimationFrame(fileProgressRafRef.current);
+				fileProgressRafRef.current = null;
+			}
 			if (fileSourceRef.current) {
 				try {
 					fileSourceRef.current.onended = null;
@@ -455,6 +478,7 @@ export default function App() {
 				});
 				micStreamRef.current = null;
 			}
+			filePlaybackStartRef.current = null;
 		};
 
 		const ensureAudioBackend = async () => {
@@ -508,7 +532,7 @@ export default function App() {
 		};
 		startMicInputRef.current = startMicInput;
 
-		const startBufferPlayback = async (buffer: AudioBuffer) => {
+		const startBufferPlayback = async (buffer: AudioBuffer, offset = 0) => {
 			await ensureAudioBackend();
 			const audioContext = audioContextRef.current;
 			const analyser = analyserRef.current;
@@ -519,13 +543,28 @@ export default function App() {
 			source.connect(analyser);
 			source.connect(audioContext.destination);
 			fileSourceRef.current = source;
+			filePlaybackStartRef.current = audioContext.currentTime - offset;
 			setFileDuration(buffer.duration);
+			setFilePosition(Math.min(offset, buffer.duration));
 			setInputMode("file");
 			setFileStatus("playing");
 			source.onended = () => {
 				setFileStatus("ended");
+				filePlaybackStartRef.current = null;
+				setFilePosition(buffer.duration);
 			};
-			source.start();
+			source.start(0, offset);
+			const tickProgress = () => {
+				if (!audioContext || filePlaybackStartRef.current === null) return;
+				const elapsed = audioContext.currentTime - filePlaybackStartRef.current;
+				if (!isScrubbingRef.current) {
+					setFilePosition(Math.min(elapsed, buffer.duration));
+				}
+				if (elapsed < buffer.duration && fileStatusRef.current !== "ended") {
+					fileProgressRafRef.current = requestAnimationFrame(tickProgress);
+				}
+			};
+			fileProgressRafRef.current = requestAnimationFrame(tickProgress);
 		};
 
 		const startFilePlayback = async (file: File) => {
@@ -542,7 +581,7 @@ export default function App() {
 				);
 				fileBufferRef.current = decoded;
 				setFileName(file.name);
-				await startBufferPlayback(decoded);
+				await startBufferPlayback(decoded, 0);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				setFileError(`Could not load file: ${message}`);
@@ -553,7 +592,7 @@ export default function App() {
 		replayFileRef.current = () => {
 			const buffer = fileBufferRef.current;
 			if (buffer) {
-				void startBufferPlayback(buffer);
+				void startBufferPlayback(buffer, 0);
 			}
 		};
 
@@ -1083,6 +1122,27 @@ export default function App() {
 		}
 	};
 
+	const handleScrubStart = () => {
+		setIsScrubbing(true);
+		isScrubbingRef.current = true;
+	};
+
+	const handleScrubChange = (event: ChangeEvent<HTMLInputElement>) => {
+		const next = Number.parseFloat(event.target.value);
+		if (Number.isFinite(next)) {
+			setFilePosition(next);
+		}
+	};
+
+	const handleScrubEnd = () => {
+		setIsScrubbing(false);
+		isScrubbingRef.current = false;
+		const buffer = fileBufferRef.current;
+		if (!buffer) return;
+		const nextPosition = Math.min(Math.max(filePosition, 0), buffer.duration);
+		void startBufferPlayback(buffer, nextPosition);
+	};
+
 	const hasLoadedFile = fileBufferRef.current !== null;
 	const micReady = micStreamRef.current !== null;
 	const fileStatusLabel = (() => {
@@ -1227,6 +1287,30 @@ export default function App() {
 							</div>
 						) : null}
 						{fileError ? <div className="error-inline">{fileError}</div> : null}
+						{inputMode === "file" && hasLoadedFile && fileDuration ? (
+							<div className="scrub-row">
+								<input
+									type="range"
+									min={0}
+									max={fileDuration}
+									step={0.01}
+									value={
+										isScrubbing
+											? filePosition
+											: Math.min(filePosition, fileDuration)
+									}
+									onMouseDown={handleScrubStart}
+									onTouchStart={handleScrubStart}
+									onChange={handleScrubChange}
+									onMouseUp={handleScrubEnd}
+									onTouchEnd={handleScrubEnd}
+								/>
+								<div className="scrub-times">
+									<span>{formatDuration(filePosition)}</span>
+									<span>{formatDuration(fileDuration)}</span>
+								</div>
+							</div>
+						) : null}
 					</div>
 				</div>
 			</section>
