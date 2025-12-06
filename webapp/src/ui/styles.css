@@ -332,26 +332,33 @@ body {
 	gap: 10px;
 }
 
+.panels-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+	gap: 10px;
+	align-items: stretch;
+}
+
 .trainer {
-	margin-top: 8px;
+	margin-top: 0;
+	height: 100%;
 }
 
 .trainer-card {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
+	height: 100%;
 }
 
-.panels-row {
-	display: flex;
-	gap: 10px;
-	align-items: flex-start;
-	flex-wrap: wrap;
+.panels-row > .metric.input-card {
+	height: 100%;
 }
 
-.panels-row > .metric.input-card,
-.panels-row > .trainer {
-	flex: 1 1 360px;
+@media (max-width: 900px) {
+	.panels-row {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 .trainer-header {
