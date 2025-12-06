@@ -231,6 +231,14 @@ export default function App() {
 		selectedVowelIdRef.current = selectedVowelId;
 	}, [selectedVowelId]);
 	useEffect(() => {
+		// Default to mic mode on load so the "Use mic" control is selected.
+		setInputMode("mic");
+		setFileStatus("idle");
+		setFileError(null);
+		setFileName("");
+		setFileDuration(null);
+	}, []);
+	useEffect(() => {
 		let pitchTarget: number | null = null;
 		if (trainingMode === "pitch") {
 			if (selectedPitchId === "custom") {
@@ -615,7 +623,7 @@ export default function App() {
 
 			const labelCount = 16;
 			ctx.fillStyle = "#5e5247";
-			ctx.font = "14px 'Soehne', 'Inter', sans-serif";
+			ctx.font = "16px 'Soehne', 'Inter', sans-serif";
 			ctx.textAlign = "center";
 			ctx.textBaseline = "top";
 
@@ -790,7 +798,7 @@ export default function App() {
 			ctx.save();
 			ctx.strokeStyle = "#d7ccbe";
 			ctx.fillStyle = "#5e5247";
-			ctx.font = "14px 'Soehne', 'Inter', sans-serif";
+			ctx.font = "16px 'Soehne', 'Inter', sans-serif";
 
 			for (let i = 0; i <= numTimeTicks; i += 1) {
 				const fraction = i / numTimeTicks;
