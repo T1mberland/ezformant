@@ -205,6 +205,9 @@ export default function App() {
 	const fileStatusRef = useRef(fileStatus);
 	const isScrubbingRef = useRef(isScrubbing);
 	const filePositionRef = useRef(0);
+	const startBufferPlaybackRef = useRef<
+		((buffer: AudioBuffer, offset?: number) => Promise<void>) | null
+	>(null);
 
 	const showFFTSpectrumRef = useRef(showFFTSpectrum);
 	const showLPCSpectrumRef = useRef(showLPCSpectrum);
@@ -576,6 +579,8 @@ export default function App() {
 			};
 			fileProgressRafRef.current = requestAnimationFrame(tickProgress);
 		};
+
+		startBufferPlaybackRef.current = startBufferPlayback;
 
 		const startFilePlayback = async (file: File) => {
 			await ensureAudioBackend();
@@ -1162,6 +1167,8 @@ export default function App() {
 	const handleTogglePlay = useCallback(() => {
 		const buffer = fileBufferRef.current;
 		if (!buffer) return;
+		const startBufferPlayback = startBufferPlaybackRef.current;
+		if (!startBufferPlayback) return;
 		if (fileStatusRef.current === "playing") {
 			if (fileSourceRef.current) {
 				try {
